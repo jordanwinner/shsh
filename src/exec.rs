@@ -963,7 +963,19 @@ impl Shell {
         // Programme externe
         let path = match self.find_in_path(&name) {
             Some(p) => p,
-            None => return self.command_not_found(&argv, redirs, forked),
+            None => {
+                // Les redirections s'appliquent aussi au message d'erreur (cmd 2>/dev/null)
+                let saved = match self.apply_redirs(redirs, true) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.error(e);
+                        return Ok(1);
+                    }
+                };
+                let r = self.command_not_found(&argv, redirs, forked);
+                self.restore_redirs(saved);
+                return r;
+            }
         };
         let env = self.env_list(&assigns);
         if forked {

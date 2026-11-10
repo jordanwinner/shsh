@@ -59,6 +59,7 @@ pub struct Parser {
     last_alias: Option<String>,
     /// alias terminé par une espace : le mot suivant est aussi candidat
     alias_next: bool,
+    depth: usize,
 }
 
 pub const RESERVED: &[&str] = &[
@@ -100,6 +101,7 @@ impl Parser {
             alias_budget: 32,
             last_alias: None,
             alias_next: false,
+            depth: 0,
         }
     }
 
@@ -1182,6 +1184,17 @@ impl Parser {
     }
 
     fn parse_command(&mut self) -> PResult<Command> {
+        self.depth += 1;
+        if self.depth > 2000 {
+            self.depth = 0;
+            return self.err("imbrication trop profonde");
+        }
+        let r = self.parse_command_inner();
+        self.depth = self.depth.saturating_sub(1);
+        r
+    }
+
+    fn parse_command_inner(&mut self) -> PResult<Command> {
         // (( expr ))
         if self.peeked.is_none() {
             self.skip_blanks();

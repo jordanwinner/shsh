@@ -292,3 +292,5 @@ f() { echo "dans $FUNCNAME"; }; f
 alias e='echo '; alias mot='MOT'; e mot
 %%
 time true 2>/dev/null; echo apres
+%%
+commande_absente_xyz 2>&1 | grep -c introuvable; nope_xyz 2>/dev/null; echo $?

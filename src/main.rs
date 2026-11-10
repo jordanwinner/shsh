@@ -116,7 +116,17 @@ fn result_code(sh: &Shell, r: ExecResult) -> Result<i32, i32> {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    // Grande pile : scripts très imbriqués et fonctions récursives sans débordement
+    let t = std::thread::Builder::new()
+        .name("shsh".into())
+        .stack_size(256 << 20)
+        .spawn(real_main)
+        .expect("impossible de démarrer le shell");
+    let _ = t.join();
+}
+
+fn real_main() {
+    let args: Vec<String> = std::env::args_os().map(|a| a.to_string_lossy().into_owned()).collect();
     let mut sh = Shell::new();
     let mut command: Option<String> = None;
     let mut force_interactive = false;
