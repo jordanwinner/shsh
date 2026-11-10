@@ -1,0 +1,306 @@
+//! Prompt « Éclipse » : deux lignes, informations contextuelles, invite transitoire.
+
+use reedline::{Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus};
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+// Palette Éclipse (identité Shadow OS)
+pub const VIOLET: (u8, u8, u8) = (124, 108, 255);
+pub const VIOLET_CLAIR: (u8, u8, u8) = (169, 155, 255);
+pub const BRAISE: (u8, u8, u8) = (255, 77, 141);
+pub const BRUME: (u8, u8, u8) = (98, 104, 140);
+pub const TEXTE: (u8, u8, u8) = (192, 202, 245);
+pub const OR: (u8, u8, u8) = (224, 175, 104);
+pub const VERT: (u8, u8, u8) = (158, 206, 106);
+pub const CYAN: (u8, u8, u8) = (125, 207, 255);
+
+pub fn fg((r, g, b): (u8, u8, u8)) -> String {
+    format!("\x1b[38;2;{r};{g};{b}m")
+}
+pub const BOLD: &str = "\x1b[1m";
+pub const RESET: &str = "\x1b[0m";
+
+pub struct PromptInfo {
+    pub cwd: String,
+    pub home: String,
+    pub status: i32,
+    pub duration: Option<Duration>,
+    pub jobs: usize,
+    pub user: String,
+    pub host: String,
+    pub ssh: bool,
+    pub root: bool,
+    pub venv: Option<String>,
+    pub shlvl: i32,
+}
+
+pub struct ShshPrompt {
+    left: String,
+    right: String,
+    ok: bool,
+    root: bool,
+}
+
+pub struct TransientPrompt {
+    pub ok: bool,
+}
+
+/// Racine git et branche (lecture directe de .git/HEAD : instantané).
+pub fn git_info(cwd: &str) -> Option<(PathBuf, String)> {
+    let mut dir = Path::new(cwd);
+    loop {
+        let g = dir.join(".git");
+        if g.exists() {
+            let gitdir = if g.is_file() {
+                // worktree / sous-module : "gitdir: chemin"
+                let s = std::fs::read_to_string(&g).ok()?;
+                let p = s.trim().strip_prefix("gitdir:")?.trim().to_string();
+                let p = PathBuf::from(p);
+                if p.is_absolute() {
+                    p
+                } else {
+                    dir.join(p)
+                }
+            } else {
+                g
+            };
+            let head = std::fs::read_to_string(gitdir.join("HEAD")).ok()?;
+            let head = head.trim();
+            let branch = match head.strip_prefix("ref: refs/heads/") {
+                Some(b) => b.to_string(),
+                None => format!("@{}", &head[..head.len().min(7)]),
+            };
+            let state = if gitdir.join("rebase-merge").exists() || gitdir.join("rebase-apply").exists() {
+                "|rebase"
+            } else if gitdir.join("MERGE_HEAD").exists() {
+                "|merge"
+            } else if gitdir.join("CHERRY_PICK_HEAD").exists() {
+                "|cherry-pick"
+            } else {
+                ""
+            };
+            return Some((dir.to_path_buf(), format!("{branch}{state}")));
+        }
+        dir = dir.parent()?;
+    }
+}
+
+/// État de l'arbre de travail, borné dans le temps (pas de prompt lent).
+fn git_dirty(root: &Path) -> Option<(bool, bool)> {
+    let mut child = Command::new("git")
+        .args(["--no-optional-locks", "status", "--porcelain=v1", "--ignore-submodules=dirty", "-unormal"])
+        .current_dir(root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()
+        .ok()?;
+    let t0 = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if t0.elapsed() > Duration::from_millis(250) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(4));
+            }
+            Err(_) => return None,
+        }
+    }
+    let out = child.wait_with_output().ok()?;
+    let s = String::from_utf8_lossy(&out.stdout);
+    let mut staged = false;
+    let mut changed = false;
+    for l in s.lines() {
+        let b = l.as_bytes();
+        if b.len() < 2 {
+            continue;
+        }
+        if b[0] == b'?' {
+            changed = true;
+            continue;
+        }
+        if b[0] != b' ' {
+            staged = true;
+        }
+        if b[1] != b' ' {
+            changed = true;
+        }
+    }
+    Some((staged, changed))
+}
+
+pub fn short_path(cwd: &str, home: &str) -> (String, String) {
+    let p = if home.len() > 1 && (cwd == home || cwd.starts_with(&format!("{home}/"))) {
+        format!("~{}", &cwd[home.len()..])
+    } else {
+        cwd.to_string()
+    };
+    // Raccourcit les dossiers intermédiaires si le chemin est long
+    let comps: Vec<&str> = p.split('/').collect();
+    let (head, last) = match p.rfind('/') {
+        Some(i) if p.len() > 1 => (&p[..=i], &p[i + 1..]),
+        _ => ("", p.as_str()),
+    };
+    if comps.len() > 5 {
+        let keep = &comps[comps.len() - 3..comps.len() - 1];
+        let first = comps[0];
+        let head = format!("{}/…/{}/", first, keep.join("/"));
+        return (head, last.to_string());
+    }
+    (head.to_string(), last.to_string())
+}
+
+fn fmt_duration(d: Duration) -> String {
+    let s = d.as_secs_f64();
+    if s < 60.0 {
+        format!("{s:.1}s")
+    } else if s < 3600.0 {
+        format!("{}m{:02}s", s as u64 / 60, s as u64 % 60)
+    } else {
+        format!("{}h{:02}m", s as u64 / 3600, (s as u64 % 3600) / 60)
+    }
+}
+
+fn clock() -> String {
+    let t = unsafe { libc::time(std::ptr::null_mut()) };
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&t, &mut tm);
+    }
+    format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
+}
+
+impl ShshPrompt {
+    pub fn build(info: &PromptInfo) -> Self {
+        let v = fg(VIOLET);
+        let vc = fg(VIOLET_CLAIR);
+        let b = fg(BRAISE);
+        let m = fg(BRUME);
+        let mut left = String::new();
+
+        if info.ssh || info.root {
+            let col = if info.root { fg(BRAISE) } else { fg(OR) };
+            left.push_str(&format!("{col}{BOLD}{}{RESET}{m}@{RESET}{col}{}{RESET} ", info.user, info.host));
+        }
+        // Dossier : parents en violet, dossier courant en gras clair
+        let (head, last) = short_path(&info.cwd, &info.home);
+        let icon = if info.cwd == info.home {
+            "\u{f015}" // maison
+        } else if info.cwd.starts_with(&info.home) {
+            "\u{f07c}" // dossier ouvert
+        } else {
+            "\u{f023}" // cadenas : hors du dossier personnel
+        };
+        left.push_str(&format!("{v}{icon} {RESET}{v}{head}{RESET}{vc}{BOLD}{last}{RESET}"));
+
+        // Git
+        if let Some((root, branch)) = git_info(&info.cwd) {
+            left.push_str(&format!(" {m}on{RESET} {b}\u{e725} {branch}{RESET}"));
+            if let Some((staged, changed)) = git_dirty(&root) {
+                let mut marks = String::new();
+                if staged {
+                    marks.push_str(&format!("{}+", fg(VERT)));
+                }
+                if changed {
+                    marks.push_str(&format!("{}●", fg(OR)));
+                }
+                if !marks.is_empty() {
+                    left.push_str(&format!(" {marks}{RESET}"));
+                }
+            }
+        }
+        if let Some(venv) = &info.venv {
+            left.push_str(&format!(" {m}via{RESET} {}\u{e73c} {venv}{RESET}", fg(OR)));
+        }
+        if info.jobs > 0 {
+            left.push_str(&format!(" {}\u{f013} {}{RESET}", fg(CYAN), info.jobs));
+        }
+
+        // Droite : code de retour, durée, heure
+        let mut right = String::new();
+        if info.status != 0 {
+            let label = match info.status {
+                130 => "INT".to_string(),
+                148 => "STOP".to_string(),
+                s if s > 128 => crate::shell::signal_name(s - 128),
+                s => s.to_string(),
+            };
+            right.push_str(&format!("{b}\u{f00d} {label}{RESET}  "));
+        }
+        if let Some(d) = info.duration {
+            if d >= Duration::from_secs(2) {
+                right.push_str(&format!("{}\u{f252} {}{RESET}  ", fg(OR), fmt_duration(d)));
+            }
+        }
+        right.push_str(&format!("{m}{}{RESET}", clock()));
+
+        ShshPrompt {
+            left: format!("{left}\n"),
+            right,
+            ok: info.status == 0,
+            root: info.root,
+        }
+    }
+}
+
+impl Prompt for ShshPrompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.left)
+    }
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.right)
+    }
+    fn render_prompt_indicator(&self, mode: PromptEditMode) -> Cow<'_, str> {
+        let col = if self.ok { fg(VIOLET) } else { fg(BRAISE) };
+        let sym = match mode {
+            PromptEditMode::Vi(reedline::PromptViMode::Normal) => "❮",
+            _ if self.root => "#",
+            _ => "❯",
+        };
+        Cow::Owned(format!("{col}{BOLD}{sym}{RESET} "))
+    }
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Owned(format!("{}·{RESET} ", fg(BRUME)))
+    }
+    fn render_prompt_history_search_indicator(&self, hs: PromptHistorySearch) -> Cow<'_, str> {
+        let (col, prefix) = match hs.status {
+            PromptHistorySearchStatus::Passing => (fg(VIOLET), ""),
+            PromptHistorySearchStatus::Failing => (fg(BRAISE), "aucun résultat · "),
+        };
+        Cow::Owned(format!("{col}\u{f002} {prefix}{}{RESET} {}❯{RESET} ", hs.term, fg(BRUME)))
+    }
+    fn right_prompt_on_last_line(&self) -> bool {
+        false
+    }
+    fn get_indicator_color(&self) -> reedline::Color {
+        reedline::Color::Rgb(VIOLET.0, VIOLET.1, VIOLET.2)
+    }
+    fn get_prompt_color(&self) -> reedline::Color {
+        reedline::Color::Rgb(VIOLET.0, VIOLET.1, VIOLET.2)
+    }
+}
+
+impl Prompt for TransientPrompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+    fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
+        let col = if self.ok { fg(VIOLET) } else { fg(BRAISE) };
+        Cow::Owned(format!("{col}❯{RESET} "))
+    }
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Owned(format!("{}·{RESET} ", fg(BRUME)))
+    }
+    fn render_prompt_history_search_indicator(&self, _hs: PromptHistorySearch) -> Cow<'_, str> {
+        Cow::Owned(format!("{}❯{RESET} ", fg(VIOLET)))
+    }
+}

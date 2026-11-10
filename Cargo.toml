@@ -1,0 +1,12 @@
+[package]
+name = "shsh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+glob = "0.3.4"
+libc = "0.2.191"
+nix = { version = "0.31.3", features = ["signal", "process", "term", "fs", "user", "resource", "hostname"] }
+nu-ansi-term = "0.50.3"
+reedline = { version = "0.53.0", features = ["bashisms"] }
+regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
