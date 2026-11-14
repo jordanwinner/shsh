@@ -1,14 +1,20 @@
 """Pilote shsh dans un pseudo-terminal : contrôle des tâches, signaux, multiligne."""
-import os, pty, sys, time, select, re, signal
+import os, pty, sys, time, select, re, signal, tempfile, json, shutil
 
 SHSH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../target/debug/shsh")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[=>]|\r")
+
+ETAT = tempfile.mkdtemp(prefix="shsh-etat-")
+SHADOW = os.path.join(ETAT, "shadow-os")
 
 def run():
     pid, fd = pty.fork()
     if pid == 0:
         os.environ["TERM"] = "xterm-256color"
         os.environ["XDG_DATA_HOME"] = os.environ.get("TEST_DATA", "/tmp/shsh-test-data")
+        os.environ["XDG_STATE_HOME"] = ETAT
+        for v in ("CIBLE", "TARGET", "MISSION", "SHSH_CIBLE_POSEE", "SHSH_SHADOW"):
+            os.environ.pop(v, None)
         os.execv(SHSH, [SHSH, "--norc"])
     # taille du terminal
     import fcntl, termios, struct
@@ -87,6 +93,32 @@ def run():
     mark(); send("(sleep 30; echo x) \r", 0.8); send(b"\x1a", 1.0); send("kill %1\r", 0.8); send("\r", 0.8)
     check("sous-shell suspendu puis tué", "Stoppé" in text())
 
+    # --- Intégration Shadow OS : mission et mode lus dans les fichiers d'état ---
+    mark(); send("echo cible=[${CIBLE-}]\r")
+    check("sans mission : $CIBLE vide", "cible=[]" in text())
+    os.makedirs(os.path.join(SHADOW, "modes"))
+    with open(os.path.join(SHADOW, "cible"), "w") as f:
+        json.dump({"cible": "10.9.8.7", "nom": "banc", "dossier": "/tmp/banc"}, f, indent=1)
+    with open(os.path.join(SHADOW, "modes", "actuel"), "w") as f:
+        f.write("pentest\n")
+    mark(); send("\r", 0.8)
+    check("mission et mode dans le prompt", "10.9.8.7" in text() and "banc" in text() and "Pentest" in text())
+    mark(); send("echo $CIBLE $TARGET $MISSION; sh -c 'echo fils=$CIBLE'\r")
+    check("$CIBLE, $TARGET, $MISSION posées et exportées", "10.9.8.7 10.9.8.7 /tmp/banc" in text() and "fils=10.9.8.7" in text())
+    os.unlink(os.path.join(SHADOW, "cible"))
+    mark(); send("echo fin=[${CIBLE-}${MISSION-}]\r")
+    check("fin de mission : variables retirées", "fin=[]" in text())
+    mark(); send("CIBLE=perso\r", 0.6)
+    with open(os.path.join(SHADOW, "cible"), "w") as f:
+        json.dump({"cible": "10.9.8.7", "nom": "banc", "dossier": "/tmp/banc"}, f)
+    send("echo garde=$CIBLE\r")
+    check("une $CIBLE posée à la main est respectée", "garde=perso" in text())
+    mark(); send("unset CIBLE; SHSH_SHADOW=0\r", 0.6); mark(); send("echo coupe=[${CIBLE-}]\r")
+    check("SHSH_SHADOW=0 coupe l'intégration", "coupe=[]" in text() and "10.9.8.7" not in text())
+    mark(); send("SHSH_SHADOW=1\r", 0.6); mark(); send("shadow mo\t", 1.0)
+    check("complétion de « shadow »", "modes" in text() and "ambiances" in text())
+    send(b"\x03", 0.6)
+
     mark(); send("exit 7\r", 1.0)
     try:
         _, status = os.waitpid(pid, 0)
@@ -94,6 +126,7 @@ def run():
     except ChildProcessError:
         code = None
     check(f"exit 7 → code {code}", code == 7)
+    shutil.rmtree(ETAT, ignore_errors=True)
     ok = sum(1 for _, c in results if c)
     print(f"\n{ok}/{len(results)} réussis")
     return ok == len(results)

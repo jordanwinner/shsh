@@ -755,6 +755,23 @@ impl ShshCompleter {
                 drop(d);
                 return CompletionResult::fresh(self.files(word, span, true, &home, &cwd));
             }
+            "shadow" | "shadow-modes" | "shadow-mode" | "shadow-cible" if !word.starts_with('-') => {
+                let violet = Some(Style::new().fg(rgb(VIOLET_CLAIR)));
+                if crate::shadow::attend_mode(&cmd, &words[1..]) {
+                    for m in crate::shadow::modes_installes(&home).into_iter().filter(|m| m.starts_with(word)) {
+                        out.push(make(m, Some("mode".into()), span, true, violet));
+                    }
+                }
+                for (c, desc) in crate::shadow::sous_commandes(&cmd, &words[1..]) {
+                    if c.starts_with(word) {
+                        let desc = if desc.is_empty() { None } else { Some(desc.to_string()) };
+                        out.push(make(c.to_string(), desc, span, true, violet));
+                    }
+                }
+                if !out.is_empty() {
+                    return CompletionResult::fresh(out);
+                }
+            }
             "git" if argn == 1 => {
                 for (c, desc) in GIT_CMDS {
                     if c.starts_with(word) {

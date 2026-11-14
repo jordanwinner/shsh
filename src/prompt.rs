@@ -34,6 +34,10 @@ pub struct PromptInfo {
     pub root: bool,
     pub venv: Option<String>,
     pub shlvl: i32,
+    /// Mode du bureau Shadow, s'il n'est pas le mode habituel.
+    pub mode: Option<String>,
+    /// Mission en cours : (adresse, nom).
+    pub cible: Option<(String, String)>,
 }
 
 pub struct ShshPrompt {
@@ -218,12 +222,33 @@ impl ShshPrompt {
         if let Some(venv) = &info.venv {
             left.push_str(&format!(" {m}via{RESET} {}\u{e73c} {venv}{RESET}", fg(OR)));
         }
+        // Mission Shadow : la cible reste sous les yeux
+        if let Some((adresse, nom)) = &info.cible {
+            left.push_str(&format!(" {m}→{RESET} {b}{BOLD}\u{f05b} {adresse}{RESET}"));
+            if !nom.is_empty() {
+                left.push_str(&format!(" {m}{nom}{RESET}"));
+            }
+        }
         if info.jobs > 0 {
             left.push_str(&format!(" {}\u{f013} {}{RESET}", fg(CYAN), info.jobs));
         }
 
         // Droite : code de retour, durée, heure
         let mut right = String::new();
+        if let Some(mode) = &info.mode {
+            let (icone, couleur) = match mode.as_str() {
+                "pentest" => ("\u{f188}", BRAISE),
+                "focus" => ("\u{f06e}", CYAN),
+                "jeu" => ("\u{f11b}", VERT),
+                "nuit" => ("\u{f186}", OR),
+                _ => ("\u{f111}", VIOLET_CLAIR),
+            };
+            let mut nom = mode.clone();
+            if let Some(c) = nom.get_mut(0..1) {
+                c.make_ascii_uppercase();
+            }
+            right.push_str(&format!("{}{icone} {nom}{RESET}  ", fg(couleur)));
+        }
         if info.status != 0 {
             let label = match info.status {
                 130 => "INT".to_string(),

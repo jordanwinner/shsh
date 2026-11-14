@@ -35,6 +35,14 @@ manuel), recherche Ctrl+R, abréviations (`abbr gs='git status'`), auto-cd,
 en arrière-plan, code de retour, durée des commandes longues, heure ; les
 prompts passés se replient en `❯ commande`.
 
+**Shadow OS** — shsh lit directement l'état du bureau, sans rien ajouter à
+`~/.shshrc` : la cible de la mission en cours (`shadow cible 10.10.11.5 nom`)
+s'affiche dans le prompt et `$CIBLE`, `$TARGET`, `$MISSION` sont posées dans
+tous les terminaux ouverts, puis retirées à `shadow cible fin` ; le mode du
+bureau (Pentest, Focus, Jeu, Nuit) apparaît à droite. Une `$CIBLE` posée à la
+main n'est jamais écrasée. Tab complète `shadow …` avec ses sous-commandes et
+les modes installés. `SHSH_SHADOW=0` coupe le tout.
+
 **Crochets** — `shsh_precmd`, `shsh_preexec "$ligne"`, `chpwd`.
 `SHSH_HISTORY_IGNORE` (regex) exclut les lignes sensibles de l'historique.
 

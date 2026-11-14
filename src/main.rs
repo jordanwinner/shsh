@@ -9,6 +9,7 @@ mod expand;
 mod jobs;
 mod parser;
 mod prompt;
+mod shadow;
 mod shell;
 
 use nix::sys::signal::{SigHandler, Signal};
@@ -317,6 +318,9 @@ fn real_main() {
             }
             sh.last_status = st;
         }
+        // Shadow OS : mode du bureau et cible de mission, relus à chaque prompt
+        let shadow = shadow::lire(&sh);
+        shadow::synchroniser(&mut sh, &shadow);
         let cwd = sh.cwd();
         // OSC 7 (nouvel onglet dans le même dossier) + titre de la fenêtre
         let host = nix::unistd::gethostname()
@@ -346,6 +350,8 @@ fn real_main() {
                 .and_then(|v| v.rsplit('/').next().map(String::from))
                 .or_else(|| sh.get_var("CONDA_DEFAULT_ENV").filter(|e| e != "base")),
             shlvl: sh.get_var("SHLVL").and_then(|s| s.parse().ok()).unwrap_or(1),
+            mode: shadow.mode.clone(),
+            cible: shadow.cible.as_ref().map(|c| (c.adresse.clone(), c.nom.clone())),
         };
         let p = prompt::ShshPrompt::build(&info);
         // Une ligne d'air entre la sortie précédente et le prompt
@@ -368,6 +374,9 @@ fn real_main() {
                     last_duration = None;
                     continue;
                 }
+                // La mission a pu changer dans un autre terminal depuis l'affichage du prompt
+                let shadow = shadow::lire(&sh);
+                shadow::synchroniser(&mut sh, &shadow);
                 if let Some(f) = sh.functions.get("shsh_preexec").cloned() {
                     let _ = sh.call_function(&f, &["shsh_preexec".into(), line.clone()]);
                 }
