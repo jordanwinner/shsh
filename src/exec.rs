@@ -647,6 +647,7 @@ impl Shell {
                 };
                 let mut i = 0;
                 let mut matched = false;
+                let mut dernier = 0;
                 while i < arms.len() {
                     let arm = &arms[i];
                     if !matched {
@@ -665,14 +666,17 @@ impl Shell {
                         }
                     }
                     if matched {
-                        let st = self.exec_list(&arm.body)?;
-                        if !arm.fallthrough {
-                            return Ok(st);
+                        dernier = self.exec_list(&arm.body)?;
+                        if arm.retest {
+                            // ;;& : on reprend la comparaison aux branches suivantes
+                            matched = false;
+                        } else if !arm.fallthrough {
+                            return Ok(dernier);
                         }
                     }
                     i += 1;
                 }
-                Ok(0)
+                Ok(dernier)
             }
             Compound::Arith(parts) => match self.eval_arith_parts(parts) {
                 Ok(v) => Ok((v == 0) as i32),
@@ -727,10 +731,11 @@ impl Shell {
                                         c.map(|m| m.as_str().to_string()).unwrap_or_default(),
                                     );
                                 }
-                                let _ = self.set_var(
-                                    "BASH_REMATCH",
-                                    caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default(),
-                                );
+                                let groupes: Vec<String> = caps
+                                    .iter()
+                                    .map(|c| c.map(|m| m.as_str().to_string()).unwrap_or_default())
+                                    .collect();
+                                let _ = self.set_array("BASH_REMATCH", groupes);
                                 Ok(true)
                             }
                             None => Ok(false),
@@ -816,7 +821,13 @@ impl Shell {
             match self.expand_str(&a.value) {
                 Ok(mut v) => {
                     if a.append {
-                        v = self.get_var(&a.name).unwrap_or_default() + &v;
+                        v = match self.append_value(&a.name, v) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                self.error(e);
+                                return Ok(1);
+                            }
+                        };
                     }
                     assigns.push((a.name.clone(), v));
                 }
@@ -843,14 +854,20 @@ impl Shell {
             if self.opts.xtrace {
                 self.xtrace(&[format!("{}=({})", a.name, vals.join(" "))]);
             }
-            if a.append {
-                return self.append_array(&a.name, std::mem::take(&mut vals));
-            }
-            return self.set_array(&a.name, vals);
+            return self.assign_compound(&a.name, a.append, std::mem::take(&mut vals));
         }
         let mut v = self.expand_str(&a.value)?;
         if let Some(idx) = &a.index {
             let e = self.expand_str(&vec![Part::DQuoted(idx.clone())])?;
+            if self.is_assoc(&a.name) {
+                if a.append {
+                    v = self.assoc_get(&a.name, &e).unwrap_or_default() + &v;
+                }
+                if self.opts.xtrace {
+                    self.xtrace(&[format!("{}[{e}]={v}", a.name)]);
+                }
+                return self.assoc_set(&a.name, &e, v);
+            }
             let i = crate::arith::eval(&e, self)?;
             if a.append {
                 if let Some(old) = self.get_elem(&a.name, i) {
@@ -863,12 +880,23 @@ impl Shell {
             return self.set_elem(&a.name, i, v);
         }
         if a.append {
-            v = self.get_var(&a.name).unwrap_or_default() + &v;
+            v = self.append_value(&a.name, v)?;
         }
         if self.opts.xtrace {
             self.xtrace(&[format!("{}={}", a.name, v)]);
         }
         self.set_var(&a.name, v)
+    }
+
+    /// Valeur après `nom+=v` : somme pour un entier (declare -i), concaténation sinon.
+    fn append_value(&mut self, name: &str, v: String) -> Result<String, String> {
+        let old = self.get_var(name).unwrap_or_default();
+        if self.vars.get(name).is_some_and(|x| x.integer) {
+            let a = crate::arith::eval(&old, self)?;
+            let b = crate::arith::eval(&v, self)?;
+            return Ok((a + b).to_string());
+        }
+        Ok(old + &v)
     }
 
     fn close_procsubs(&mut self) {

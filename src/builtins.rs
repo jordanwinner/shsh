@@ -152,11 +152,8 @@ fn array_arg(sh: &mut Shell, arg: &str) -> Option<(String, bool, Vec<String>)> {
     Some((name.to_string(), app == "1", vals))
 }
 
-fn assign_array_arg(sh: &mut Shell, name: &str, append: bool, mut vals: Vec<String>) -> Result<(), String> {
-    if append {
-        return sh.append_array(name, std::mem::take(&mut vals));
-    }
-    sh.set_array(name, vals)
+fn assign_array_arg(sh: &mut Shell, name: &str, append: bool, vals: Vec<String>) -> Result<(), String> {
+    sh.assign_compound(name, append, vals)
 }
 
 fn out(s: &str) {
@@ -858,11 +855,16 @@ fn b_declare(sh: &mut Shell, a: &[String]) -> ExecResult {
     let mut print = false;
     let mut funcs = false;
     let mut is_arr = false;
+    let mut is_assoc = false;
+    let mut is_int = false;
     let mut names = Vec::new();
     for x in &a[1..] {
         if let Some((name, app, vals)) = array_arg(sh, x) {
             if sh.func_depth > 0 {
                 sh.make_local(&name);
+            }
+            if is_assoc {
+                let _ = sh.declare_assoc(&name);
             }
             if let Err(e) = assign_array_arg(sh, &name, app, vals) {
                 sh.error(e);
@@ -875,6 +877,11 @@ fn b_declare(sh: &mut Shell, a: &[String]) -> ExecResult {
             for c in x[1..].chars() {
                 match c {
                     'a' => is_arr = true,
+                    'A' => {
+                        is_arr = true;
+                        is_assoc = true;
+                    }
+                    'i' => is_int = true,
                     'x' => export = true,
                     'r' => ro = true,
                     'p' => print = true,
@@ -911,7 +918,12 @@ fn b_declare(sh: &mut Shell, a: &[String]) -> ExecResult {
             if var.readonly {
                 fl.push('r');
             }
-            if var.array.is_some() {
+            if var.integer {
+                fl.push('i');
+            }
+            if var.keys.is_some() {
+                fl.push('A');
+            } else if var.array.is_some() {
                 fl.push('a');
             }
             if fl == "-" {
@@ -919,10 +931,14 @@ fn b_declare(sh: &mut Shell, a: &[String]) -> ExecResult {
             }
             match &var.array {
                 Some(arr) => {
-                    let items: Vec<String> = arr
-                        .iter()
-                        .map(|(i, x)| format!("[{i}]={}", quote_if_needed(x)))
-                        .collect();
+                    let items: Vec<String> = match &var.keys {
+                        Some(keys) => keys
+                            .iter()
+                            .zip(arr.values())
+                            .map(|(k, x)| format!("[{}]={}", quote_if_needed(k), quote_if_needed(x)))
+                            .collect(),
+                        None => arr.iter().map(|(i, x)| format!("[{i}]={}", quote_if_needed(x))).collect(),
+                    };
                     s.push_str(&format!("declare {fl} {k}=({})\n", items.join(" ")));
                 }
                 None => s.push_str(&format!("declare {fl} {k}={}\n", quote_if_needed(&var.value))),
@@ -938,6 +954,20 @@ fn b_declare(sh: &mut Shell, a: &[String]) -> ExecResult {
         };
         if sh.func_depth > 0 && !sh.is_array(&name) {
             sh.make_local(&name);
+        }
+        if is_assoc {
+            if let Err(e) = sh.declare_assoc(&name) {
+                sh.error(e);
+                return Ok(1);
+            }
+        }
+        if is_int {
+            if !sh.vars.contains_key(&name) {
+                let _ = sh.set_var(&name, String::new());
+            }
+            if let Some(var) = sh.vars.get_mut(&name) {
+                var.integer = true;
+            }
         }
         if let Some(v) = val {
             if let Err(e) = sh.set_var(&name, v) {
@@ -974,7 +1004,10 @@ fn b_unset(sh: &mut Shell, a: &[String]) -> ExecResult {
                 if let (Some(open), true) = (n.find('['), n.ends_with(']')) {
                     let name = &n[..open];
                     let idx = &n[open + 1..n.len() - 1];
-                    if let Ok(i) = crate::arith::eval(idx, sh) {
+                    if sh.is_assoc(name) {
+                        let cle = idx.trim_matches(|c| c == '"' || c == '\'');
+                        let _ = sh.assoc_unset(name, cle);
+                    } else if let Ok(i) = crate::arith::eval(idx, sh) {
                         let _ = sh.unset_elem(name, i);
                     }
                     continue;

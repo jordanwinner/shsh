@@ -213,7 +213,7 @@ impl Shell {
         // ${!nom} : indirection ; ${!a[@]} : indices
         if pe.indirect {
             if let Some(Index::All(star)) = &pe.index {
-                let keys: Vec<String> = self.get_array_keys(name).iter().map(|i| i.to_string()).collect();
+                let keys: Vec<String> = self.get_array_keys(name);
                 self.emit_list(keys, *star, quoted, out);
                 return Ok(());
             }
@@ -245,11 +245,21 @@ impl Shell {
             Some(Index::All(star)) => return self.expand_list_param(pe, *star, quoted, out),
             Some(Index::Expr(parts)) => {
                 let e = self.expand_str(&vec![Part::DQuoted(parts.clone())])?;
+                if self.is_assoc(name) {
+                    let val = self.assoc_get(name, &e);
+                    return self.expand_scalar(pe, val, quoted, out);
+                }
                 let i = crate::arith::eval(&e, self)?;
                 let val = self.get_elem(name, i);
                 return self.expand_scalar(pe, val, quoted, out);
             }
             None => {}
+        }
+        if let ParamOp::PrefixNames(star) = &pe.op {
+            let mut noms: Vec<String> = self.vars.keys().filter(|k| k.starts_with(name)).cloned().collect();
+            noms.sort();
+            self.emit_list(noms, *star, quoted, out);
+            return Ok(());
         }
         if name == "@" || name == "*" {
             return self.expand_list_param(pe, name == "*", quoted, out);
@@ -314,6 +324,11 @@ impl Shell {
                 let v = arr.iter().map(|x| change_case(x, up, *all, &pat)).collect();
                 self.emit_list(v, star, quoted, out);
             }
+            ParamOp::Transform(t) => {
+                let v = arr.iter().map(|x| transform(x, *t)).collect();
+                self.emit_list(v, star, quoted, out);
+            }
+            ParamOp::PrefixNames(_) => {}
             ParamOp::Substr(ow, lw) => {
                 // ${@:2} commence à $2 ; ${a[@]:1} à l'élément 1
                 let list: Vec<String> = if positional {
@@ -419,6 +434,12 @@ impl Shell {
                 let pat = self.expand_pattern(pw)?;
                 out.push(wrap(change_case(&v, up, *all, &pat)));
             }
+            ParamOp::Transform(t) => {
+                if let Some(v) = val {
+                    out.push(wrap(transform(&v, *t)));
+                }
+            }
+            ParamOp::PrefixNames(_) => {}
             ParamOp::Substr(ow, lw) => {
                 let v = val.unwrap_or_default();
                 let chars: Vec<char> = v.chars().collect();
@@ -881,4 +902,22 @@ fn brace_seq(inner: &str) -> Option<Vec<String>> {
         return Some(v);
     }
     None
+}
+
+/// ${x@Q} (entre apostrophes), ${x@U} ${x@u} ${x@L} (casse) ; les autres
+/// opérateurs rendent la valeur telle quelle.
+fn transform(v: &str, t: char) -> String {
+    match t {
+        'Q' => format!("'{}'", v.replace('\'', "'\\''")),
+        'U' => v.to_uppercase(),
+        'L' => v.to_lowercase(),
+        'u' => {
+            let mut c = v.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                None => String::new(),
+            }
+        }
+        _ => v.to_string(),
+    }
 }

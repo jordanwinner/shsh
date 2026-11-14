@@ -23,6 +23,7 @@ pub enum Op {
     OrIf,
     Semi,
     DSemi,
+    DSemiAmp,
     SemiAmp,
     Amp,
     Pipe,
@@ -276,6 +277,7 @@ impl Parser {
             '|' if self.starts_with("||") => Some((Op::OrIf, 2)),
             '|' if self.starts_with("|&") => Some((Op::PipeAmp, 2)),
             '|' => Some((Op::Pipe, 1)),
+            ';' if self.starts_with(";;&") => Some((Op::DSemiAmp, 3)),
             ';' if self.starts_with(";;") => Some((Op::DSemi, 2)),
             ';' if self.starts_with(";&") => Some((Op::SemiAmp, 2)),
             ';' => Some((Op::Semi, 1)),
@@ -689,7 +691,10 @@ impl Parser {
             self.pos += 1;
         }
         let mut indirect = false;
-        if self.cur() == Some('!') && self.at(1).is_some_and(|c| c == '_' || c.is_ascii_alphanumeric()) {
+        if self.cur() == Some('!')
+            && (self.at(1).is_some_and(|c| c == '_' || c.is_ascii_alphanumeric())
+                || (self.at(1) == Some('#') && self.at(2) == Some('}')))
+        {
             indirect = true;
             self.pos += 1;
         }
@@ -761,6 +766,23 @@ impl Parser {
             None => return self.eof_err("accolade ${ non fermée"),
             Some(c) => c,
         };
+        // ${!préfixe*} / ${!préfixe@} : noms des variables
+        if indirect && index.is_none() && (c == '*' || c == '@') && self.at(1) == Some('}') {
+            self.pos += 2;
+            return Ok(Part::Param(Box::new(ParamExp {
+                name,
+                op: ParamOp::PrefixNames(c == '*'),
+                index: None,
+                indirect: false,
+            })));
+        }
+        // ${x@Q} et consorts
+        if c == '@' && self.at(2) == Some('}') {
+            if let Some(t) = self.at(1).filter(|t| "QUuLEPAaKk".contains(*t)) {
+                self.pos += 3;
+                return Ok(Part::Param(Box::new(ParamExp { name, op: ParamOp::Transform(t), index, indirect })));
+            }
+        }
         let op = if c == '}' {
             self.pos += 1;
             ParamOp::Plain
@@ -1075,7 +1097,7 @@ impl Parser {
         loop {
             self.skip_newlines()?;
             match self.peek()? {
-                Tok::Eof | Tok::Op(Op::RParen) | Tok::Op(Op::DSemi) | Tok::Op(Op::SemiAmp) => break,
+                Tok::Eof | Tok::Op(Op::RParen) | Tok::Op(Op::DSemi) | Tok::Op(Op::DSemiAmp) | Tok::Op(Op::SemiAmp) => break,
                 _ => {}
             }
             if let Some(r) = self.peek_reserved()? {
@@ -1466,6 +1488,7 @@ impl Parser {
                     }
                     let body = self.parse_list(&[])?;
                     let mut fallthrough = false;
+                    let mut retest = false;
                     match self.peek()? {
                         Tok::Op(Op::DSemi) => {
                             self.next()?;
@@ -1474,12 +1497,17 @@ impl Parser {
                             self.next()?;
                             fallthrough = true;
                         }
+                        Tok::Op(Op::DSemiAmp) => {
+                            self.next()?;
+                            retest = true;
+                        }
                         _ => {}
                     }
                     arms.push(CaseArm {
                         patterns,
                         body,
                         fallthrough,
+                        retest,
                     });
                 }
                 Ok(Compound::Case { word, arms })
@@ -1734,6 +1762,7 @@ pub fn op_str(op: &Op) -> &'static str {
         Op::OrIf => "||",
         Op::Semi => ";",
         Op::DSemi => ";;",
+        Op::DSemiAmp => ";;&",
         Op::SemiAmp => ";&",
         Op::Amp => "&",
         Op::Pipe => "|",
@@ -1770,6 +1799,42 @@ fn split_assign(w: &Word) -> Option<Assign> {
         Some(Part::Lit(s)) => s,
         _ => return None,
     };
+    // nom[…$clé…]=valeur : l'indice contient une expansion, il s'étale sur plusieurs parties
+    if let Some(open) = first.find('[') {
+        if is_name(&first[..open]) && !first[open..].contains(']') && !first[..open].contains('=') {
+            for (j, part) in w.iter().enumerate().skip(1) {
+                let Part::Lit(t) = part else { continue };
+                let Some(close) = t.find(']') else { continue };
+                let apres = &t[close + 1..];
+                let (append, reste) = match (apres.strip_prefix("+="), apres.strip_prefix('=')) {
+                    (Some(r), _) => (true, r),
+                    (None, Some(r)) => (false, r),
+                    _ => return None,
+                };
+                let mut index: Vec<Part> = Vec::new();
+                if first.len() > open + 1 {
+                    index.push(Part::Lit(first[open + 1..].to_string()));
+                }
+                index.extend(w[1..j].iter().cloned());
+                if close > 0 {
+                    index.push(Part::Lit(t[..close].to_string()));
+                }
+                let mut value: Word = Vec::new();
+                if !reste.is_empty() {
+                    value.push(Part::Lit(reste.to_string()));
+                }
+                value.extend(w[j + 1..].iter().cloned());
+                return Some(Assign {
+                    name: first[..open].to_string(),
+                    append,
+                    value,
+                    index: Some(index),
+                    array: None,
+                });
+            }
+            return None;
+        }
+    }
     let eq = first.find('=')?;
     let (mut name, append) = (&first[..eq], false);
     let mut append = append;

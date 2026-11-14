@@ -17,7 +17,9 @@ les alias et fonctions d'un `~/.zshrc`.
 
 **Langage** — pipes, redirections (`2>&1`, `&>`, `<<<`, here-docs), `&&` `||`,
 `if/while/until/for/case`, `for ((…))`, fonctions et `local`, `[[ … ]]` avec
-`=~`, `(( … ))`, tableaux (`a=(…)`, `${a[@]}`, `${!a[@]}`, creux), toutes les
+`=~` et `BASH_REMATCH`, `(( … ))`, tableaux (`a=(…)`, `${a[@]}`, `${!a[@]}`,
+creux), tableaux associatifs (`declare -A`), entiers (`declare -i`), `case`
+avec `;&` et `;;&`, `${x@Q}` `${x@U}`, `${!préfixe*}`, toutes les
 expansions `${…}` (défaut, motifs, remplacement, casse, sous-chaînes,
 indirection), `$(…)`, `$(< fichier)`, `<(…)`, accolades `{a,b}` `{1..10}`,
 globbing avec `**` récursif, `time`, `set -euxo pipefail`, `shopt`
@@ -49,6 +51,6 @@ les modes installés. `SHSH_SHADOW=0` coupe le tout.
 ## Tests
 
 ```sh
-tests/compat.sh          # compare la sortie de shsh à celle de bash sur ~140 extraits
+tests/compat.sh          # compare la sortie de shsh à celle de bash sur ~160 extraits
 python3 tests/pty_test.py  # pilote un shsh interactif dans un pseudo-terminal
 ```

@@ -46,6 +46,10 @@ pub struct Var {
     pub readonly: bool,
     /// Tableau indexé (value == élément 0)
     pub array: Option<BTreeMap<usize, String>>,
+    /// Tableau associatif : clés, parallèles aux valeurs de `array` (positions 0..n)
+    pub keys: Option<Vec<String>>,
+    /// declare -i : toute valeur affectée est évaluée comme une expression
+    pub integer: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -130,6 +134,8 @@ impl Shell {
                         exported: true,
                         readonly: false,
                         array: None,
+                        keys: None,
+                        integer: false,
                     },
                 );
             }
@@ -319,6 +325,8 @@ impl Shell {
                         exported: false,
                         readonly: false,
                         array: None,
+                        keys: None,
+                        integer: false,
                     },
                 );
             }
@@ -334,6 +342,14 @@ impl Shell {
         if name == "PATH" {
             self.cmd_cache.clear();
         }
+        if self.is_assoc(name) {
+            return self.assoc_set(name, "0", value);
+        }
+        let value = if self.vars.get(name).is_some_and(|v| v.integer) {
+            crate::arith::eval(&value, self)?.to_string()
+        } else {
+            value
+        };
         let allexport = self.opts.allexport;
         match self.vars.get_mut(name) {
             Some(v) => {
@@ -353,6 +369,8 @@ impl Shell {
                         exported: allexport,
                         readonly: false,
                         array: None,
+                        keys: None,
+                        integer: false,
                     },
                 );
             }
@@ -377,17 +395,136 @@ impl Shell {
         }
     }
 
-    pub fn get_array_keys(&mut self, name: &str) -> Vec<usize> {
+    /// Indices (tableau indexé) ou clés (tableau associatif), pour ${!a[@]}.
+    pub fn get_array_keys(&mut self, name: &str) -> Vec<String> {
         if name == "@" || name == "*" {
-            return (1..=self.positional.len()).collect();
+            return (1..=self.positional.len()).map(|i| i.to_string()).collect();
         }
         match self.vars.get(name) {
-            Some(v) => match &v.array {
-                Some(a) => a.keys().copied().collect(),
-                None => vec![0],
+            Some(v) => match (&v.keys, &v.array) {
+                (Some(k), _) => k.clone(),
+                (None, Some(a)) => a.keys().map(|i| i.to_string()).collect(),
+                (None, None) => vec!["0".into()],
             },
             None => vec![],
         }
+    }
+
+    // ----- Tableaux associatifs (declare -A) -----
+
+    pub fn is_assoc(&self, name: &str) -> bool {
+        self.vars.get(name).is_some_and(|v| v.keys.is_some())
+    }
+
+    fn assoc_pairs(&self, name: &str) -> Vec<(String, String)> {
+        match self.vars.get(name) {
+            Some(Var { keys: Some(k), array: Some(a), .. }) => {
+                k.iter().cloned().zip(a.values().cloned()).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Remplace tout le contenu d'un tableau associatif (le crée au besoin).
+    pub fn assoc_store(&mut self, name: &str, pairs: Vec<(String, String)>) -> Result<(), String> {
+        let (exported, readonly) = match self.vars.get(name) {
+            Some(v) if v.readonly => return Err(format!("{name} : variable en lecture seule")),
+            Some(v) => (v.exported, v.readonly),
+            None => (false, false),
+        };
+        let value = pairs.iter().find(|(k, _)| k == "0").map(|(_, v)| v.clone()).unwrap_or_default();
+        let (keys, vals): (Vec<String>, Vec<String>) = pairs.into_iter().unzip();
+        self.vars.insert(
+            name.to_string(),
+            Var {
+                value,
+                exported,
+                readonly,
+                array: Some(vals.into_iter().enumerate().collect()),
+                keys: Some(keys),
+                integer: false,
+            },
+        );
+        Ok(())
+    }
+
+    /// declare -A nom : sans effet si la variable est déjà associative.
+    pub fn declare_assoc(&mut self, name: &str) -> Result<(), String> {
+        if self.is_assoc(name) {
+            return Ok(());
+        }
+        self.assoc_store(name, Vec::new())
+    }
+
+    pub fn assoc_get(&self, name: &str, key: &str) -> Option<String> {
+        self.assoc_pairs(name).into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    pub fn assoc_set(&mut self, name: &str, key: &str, val: String) -> Result<(), String> {
+        let mut pairs = self.assoc_pairs(name);
+        match pairs.iter_mut().find(|(k, _)| k == key) {
+            Some(p) => p.1 = val,
+            None => pairs.push((key.to_string(), val)),
+        }
+        self.assoc_store(name, pairs)
+    }
+
+    pub fn assoc_unset(&mut self, name: &str, key: &str) -> Result<(), String> {
+        let mut pairs = self.assoc_pairs(name);
+        pairs.retain(|(k, _)| k != key);
+        self.assoc_store(name, pairs)
+    }
+
+    /// Affectation composée `nom=(…)` : mots simples, ou formes `[clé]=valeur`
+    /// (obligatoires pour un tableau associatif, admises pour un tableau indexé).
+    pub fn assign_compound(&mut self, name: &str, append: bool, vals: Vec<String>) -> Result<(), String> {
+        fn cle_valeur(w: &str) -> Option<(&str, &str)> {
+            let r = w.strip_prefix('[')?;
+            let f = r.find("]=")?;
+            Some((&r[..f], &r[f + 2..]))
+        }
+        if self.is_assoc(name) {
+            // Une clé avec espaces non protégée ([y z]=2) arrive découpée : on la recolle
+            let mut recolle: Vec<String> = Vec::new();
+            let mut ouvert = false;
+            for w in vals {
+                if ouvert {
+                    let dernier = recolle.last_mut().unwrap();
+                    dernier.push(' ');
+                    dernier.push_str(&w);
+                    ouvert = !w.contains("]=");
+                } else {
+                    ouvert = w.starts_with('[') && !w.contains("]=");
+                    recolle.push(w);
+                }
+            }
+            let vals = recolle;
+            let mut pairs = if append { self.assoc_pairs(name) } else { Vec::new() };
+            for w in &vals {
+                let (k, v) = cle_valeur(w)
+                    .ok_or_else(|| format!("{name} : « {w} » — un tableau associatif attend [clé]=valeur"))?;
+                match pairs.iter_mut().find(|(pk, _)| pk == k) {
+                    Some(p) => p.1 = v.to_string(),
+                    None => pairs.push((k.to_string(), v.to_string())),
+                }
+            }
+            return self.assoc_store(name, pairs);
+        }
+        let indexes: Option<Vec<(usize, &str)>> = vals
+            .iter()
+            .map(|w| cle_valeur(w).and_then(|(k, v)| k.parse::<usize>().ok().map(|i| (i, v))))
+            .collect();
+        if let Some(ix) = indexes.filter(|ix| !ix.is_empty()) {
+            let mut m = if append { self.array_map(name) } else { BTreeMap::new() };
+            for (i, v) in ix {
+                m.insert(i, v.to_string());
+            }
+            return self.put_array(name, m);
+        }
+        if append {
+            return self.append_array(name, vals);
+        }
+        self.set_array(name, vals)
     }
 
     fn array_index(&self, name: &str, idx: i64) -> Option<usize> {
@@ -436,6 +573,8 @@ impl Shell {
                 exported,
                 readonly: false,
                 array: Some(map),
+                keys: None,
+                integer: false,
             },
         );
         Ok(())

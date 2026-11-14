@@ -70,6 +70,10 @@ pub enum ParamOp {
     Lower(bool, Word),
     /// ${x:début:longueur}
     Substr(Word, Option<Word>),
+    /// ${x@Q} ${x@U} ${x@u} ${x@L} ${x@E}
+    Transform(char),
+    /// ${!préfixe*} / ${!préfixe@} : noms des variables (true = forme *)
+    PrefixNames(bool),
 }
 
 pub type List = Vec<ListItem>;
@@ -164,8 +168,10 @@ pub enum Compound {
 pub struct CaseArm {
     pub patterns: Vec<Word>,
     pub body: List,
-    /// ;& (exécute la branche suivante) ou ;;& non gérés : ;; seulement
+    /// ;& : exécute aussi la branche suivante
     pub fallthrough: bool,
+    /// ;;& : continue à comparer les branches suivantes
+    pub retest: bool,
 }
 
 #[derive(Debug, Clone)]

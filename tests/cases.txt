@@ -294,3 +294,37 @@ alias e='echo '; alias mot='MOT'; e mot
 time true 2>/dev/null; echo apres
 %%
 commande_absente_xyz 2>&1 | grep -c introuvable; nope_xyz 2>/dev/null; echo $?
+%%
+declare -A m; m[a]=1; m[b]=2; for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort
+%%
+declare -A m=([x]=1 [y z]=2 ["k k"]=3); echo ${#m[@]} "${m[x]}" "${m[k k]}"; unset 'm[x]'; echo ${#m[@]}
+%%
+declare -A m; k="a b"; m[$k]=v; m[$k]+=w; echo "${m[$k]}" "${m[nope]:-def}"; [[ -n ${m[a b]} ]] && echo set
+%%
+declare -A c; for w in a b a c a; do c[$w]=$(( ${c[$w]:-0} + 1 )); done; echo ${c[a]} ${c[b]} ${c[c]}
+%%
+f() { local -A loc; loc[k]=v; echo ${loc[k]}; }; f; echo "[${loc[k]}]"
+%%
+declare -i n=5; n+=3; echo $n; n=2*4; echo $n; declare -i z; echo "[$z]"
+%%
+a=([2]=x [5]=y); echo ${!a[@]} ${a[5]}
+%%
+case abc in a*) echo 1;;& *c) echo 2;; *) echo 3;; esac
+%%
+case abc in a*) echo 1;& zzz) echo 2;;& *c) echo 3;; esac
+%%
+case x in y) echo no;; esac; echo $?
+%%
+set -- a b c; echo "$#" "${@:2}" "${!#}"
+%%
+x=abc; echo ${x: -1} ${x%c} ${x#a} ${x@Q} ${x@U} ${x@u} ${x@L}; y="it's"; echo ${y@Q}
+%%
+[[ "abc123" =~ ([a-z]+)([0-9]+) ]] && echo ${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[0]} $BASH_REMATCH ${#BASH_REMATCH[@]}
+%%
+echo ${!HOM*} | grep -c HOME; XA1=1 XA2=2; echo ${!XA@}
+%%
+a=(1 2 3); echo ${a[@]@Q}; x=5; echo ${!x@} | wc -w
+%%
+a=(x y z); i=1; a[$i]=Q; a[i+1]=R; a[$((i-1))]+=s; echo ${a[@]}
+%%
+declare -A m; m["a b"]=1; m[$(echo k)]=2; echo "${m[a b]}${m[k]}"; x[0]=lit; echo $x
