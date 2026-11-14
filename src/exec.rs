@@ -152,6 +152,25 @@ impl Shell {
         Ok(st)
     }
 
+    /// trap '…' ERR : lancé dans les mêmes conditions que set -e.
+    fn run_err_trap(&mut self, status: i32) -> Result<(), Flow> {
+        if status == 0 || self.cond_depth != 0 || self.in_trap {
+            return Ok(());
+        }
+        let Some(cmd) = self.traps.get(&crate::shell::TRAP_ERR).cloned() else { return Ok(()) };
+        if cmd.is_empty() {
+            return Ok(());
+        }
+        self.in_trap = true;
+        let r = self.run_source(&cmd, "");
+        self.in_trap = false;
+        self.last_status = status;
+        if let Err(Flow::Exit(n)) = r {
+            return Err(Flow::Exit(n));
+        }
+        Ok(())
+    }
+
     fn errexit_check(&mut self, status: i32) -> Result<(), Flow> {
         if self.opts.errexit && status != 0 && self.cond_depth == 0 {
             return Err(Flow::Exit(status));
@@ -192,6 +211,7 @@ impl Shell {
         let st = if p.negate { (st == 0) as i32 } else { st };
         self.last_status = st;
         if !in_cond && !p.negate {
+            self.run_err_trap(st)?;
             self.errexit_check(st)?;
         }
         Ok(st)

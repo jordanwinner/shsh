@@ -255,6 +255,16 @@ impl Shell {
                 return Some(((x >> 33) % 32768).to_string());
             }
             "SECONDS" => return Some(self.start.elapsed().as_secs().to_string()),
+            "UID" if !self.vars.contains_key("UID") => return Some(nix::unistd::getuid().to_string()),
+            "EUID" if !self.vars.contains_key("EUID") => return Some(nix::unistd::geteuid().to_string()),
+            "HOSTNAME" if !self.vars.contains_key("HOSTNAME") => {
+                return nix::unistd::gethostname().ok().map(|h| h.to_string_lossy().into_owned());
+            }
+            "OSTYPE" if !self.vars.contains_key("OSTYPE") => return Some("linux-gnu".into()),
+            "HOSTTYPE" if !self.vars.contains_key("HOSTTYPE") => return Some(std::env::consts::ARCH.into()),
+            "MACHTYPE" if !self.vars.contains_key("MACHTYPE") => {
+                return Some(format!("{}-pc-linux-gnu", std::env::consts::ARCH));
+            }
             "EPOCHSECONDS" => {
                 return Some(
                     std::time::SystemTime::now()
@@ -773,6 +783,9 @@ pub fn signal_name(sig: i32) -> String {
         .map(|s| s.as_str().trim_start_matches("SIG").to_string())
         .unwrap_or_else(|_| sig.to_string())
 }
+
+/// Clé de `traps` pour le pseudo-signal ERR (trap '…' ERR).
+pub const TRAP_ERR: i32 = -1;
 
 pub fn parse_signal(s: &str) -> Option<i32> {
     if let Ok(n) = s.parse::<i32>() {

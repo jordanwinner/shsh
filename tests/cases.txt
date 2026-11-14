@@ -328,3 +328,11 @@ a=(1 2 3); echo ${a[@]@Q}; x=5; echo ${!x@} | wc -w
 a=(x y z); i=1; a[$i]=Q; a[i+1]=R; a[$((i-1))]+=s; echo ${a[@]}
 %%
 declare -A m; m["a b"]=1; m[$(echo k)]=2; echo "${m[a b]}${m[k]}"; x[0]=lit; echo $x
+%%
+trap 'echo err $?' ERR; false; echo after; if false; then :; fi; false || echo ok; ! true; f() { return 3; }; f; echo fin
+%%
+set -e; trap 'echo piege' ERR; echo a; false; echo jamais
+%%
+printf '%(%Y-%m-%d)T\n' 0; printf '%(%Y)T' -1 | wc -c; printf '%e|%E|%.2e|%e\n' 1000 0.00012 123456 0
+%%
+kill -l 15; kill -l TERM; kill -l 9 2; kill -l HUP INT

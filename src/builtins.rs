@@ -548,8 +548,32 @@ pub fn printf_format(fmt: &str, args: &[String]) -> (String, bool) {
                     prec = Some(p.parse().unwrap_or(0));
                 }
             }
+            // %(format)T : date selon strftime (argument : secondes, -1 ou rien = maintenant)
+            if i < f.len() && f[i] == '(' {
+                if let Some(fin) = f[i..].iter().position(|c| *c == ')') {
+                    if f.get(i + fin + 1) == Some(&'T') {
+                        let modele: String = f[i + 1..i + fin].iter().collect();
+                        i += fin + 2;
+                        let quand = match args.get(ai).map(|s| s.trim()) {
+                            None | Some("") | Some("-1") | Some("-2") => unsafe { libc::time(std::ptr::null_mut()) },
+                            Some(s) => s.parse::<i64>().unwrap_or(0) as libc::time_t,
+                        };
+                        ai += 1;
+                        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+                        unsafe { libc::localtime_r(&quand, &mut tm) };
+                        let mut tampon = vec![0u8; 512];
+                        if let Ok(c) = std::ffi::CString::new(modele) {
+                            let n = unsafe {
+                                libc::strftime(tampon.as_mut_ptr() as *mut libc::c_char, tampon.len(), c.as_ptr(), &tm)
+                            };
+                            o.push_str(&String::from_utf8_lossy(&tampon[..n]));
+                        }
+                        continue;
+                    }
+                }
+            }
             // modificateurs de longueur ignorés
-            while i < f.len() && "hlLqjzt".contains(f[i]) {
+            while i < f.len() && "hlLjzt".contains(f[i]) {
                 i += 1;
             }
             if i >= f.len() {
@@ -649,8 +673,14 @@ pub fn printf_format(fmt: &str, args: &[String]) -> (String, bool) {
                     let p = prec.unwrap_or(6);
                     let mut s = match conv {
                         'f' | 'F' => format!("{v:.p$}"),
-                        'e' => format!("{v:.p$e}"),
-                        'E' => format!("{v:.p$E}"),
+                        'e' | 'E' => {
+                            // Rust écrit « 1e3 », C attend « 1e+03 »
+                            let brut = format!("{v:.p$e}");
+                            let (m, x) = brut.split_once('e').unwrap_or((&brut, "0"));
+                            let x: i32 = x.parse().unwrap_or(0);
+                            let s = format!("{m}e{}{:02}", if x < 0 { '-' } else { '+' }, x.abs());
+                            if conv == 'E' { s.to_uppercase() } else { s }
+                        }
                         _ => {
                             let s = format!("{v:.p$}", p = p.max(1).saturating_sub(1).min(16));
                             if s.contains('.') {
@@ -1836,6 +1866,24 @@ impl Shell {
 fn b_kill(sh: &mut Shell, a: &[String]) -> ExecResult {
     let mut sig = libc::SIGTERM;
     let mut i = 1;
+    if a.get(1).map(|s| s.as_str()) == Some("-l") && a.len() > 2 {
+        // kill -l 15 → TERM ; kill -l TERM → 15
+        let mut st = 0;
+        for x in &a[2..] {
+            match x.parse::<i32>() {
+                Ok(n) if (1..65).contains(&(n & 127)) => out(&format!("{}\n", signal_name(n & 127))),
+                Ok(_) => st = 1,
+                Err(_) => match parse_signal(x) {
+                    Some(n) => out(&format!("{n}\n")),
+                    None => {
+                        sh.error(format!("kill : {x} : signal invalide"));
+                        st = 1;
+                    }
+                },
+            }
+        }
+        return Ok(st);
+    }
     if a.get(1).map(|s| s.as_str()) == Some("-l") {
         let mut s = String::new();
         for n in 1..32 {
@@ -2330,7 +2378,11 @@ fn b_trap(sh: &mut Shell, a: &[String]) -> ExecResult {
         let s: String = v
             .iter()
             .map(|(sig, cmd)| {
-                let n = if **sig == 0 { "EXIT".to_string() } else { signal_name(**sig) };
+                let n = match **sig {
+                    0 => "EXIT".to_string(),
+                    crate::shell::TRAP_ERR => "ERR".to_string(),
+                    s => signal_name(s),
+                };
                 format!("trap -- {} {n}\n", quote_if_needed(cmd))
             })
             .collect();
@@ -2350,9 +2402,10 @@ fn b_trap(sh: &mut Shell, a: &[String]) -> ExecResult {
     let mut st = 0;
     for s in sigs {
         let sig = match parse_signal(s) {
+            _ if s == "ERR" || s == "SIGERR" => crate::shell::TRAP_ERR,
             Some(n) if (0..65).contains(&n) => n,
             _ => {
-                if s == "ERR" || s == "DEBUG" || s == "RETURN" {
+                if s == "DEBUG" || s == "RETURN" {
                     continue;
                 }
                 sh.error(format!("trap : {s} : signal invalide"));
