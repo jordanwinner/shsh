@@ -755,6 +755,19 @@ impl ShshCompleter {
                 drop(d);
                 return CompletionResult::fresh(self.files(word, span, true, &home, &cwd));
             }
+            _ if !word.starts_with('-') && crate::completions::connue(&cmd) => {
+                drop(d);
+                let style = Some(Style::new().fg(rgb(CYAN)));
+                if let Some(v) = crate::completions::candidats(&cmd, &words[1..], word, &cwd) {
+                    for (val, desc) in v {
+                        out.push(make(val, if desc.is_empty() { None } else { Some(desc) }, span, true, style));
+                    }
+                    if !out.is_empty() {
+                        return CompletionResult::fresh(out);
+                    }
+                }
+                return CompletionResult::fresh(self.files(word, span, false, &home, &cwd));
+            }
             "shadow" | "shadow-modes" | "shadow-mode" | "shadow-cible" if !word.starts_with('-') => {
                 let violet = Some(Style::new().fg(rgb(VIOLET_CLAIR)));
                 if crate::shadow::attend_mode(&cmd, &words[1..]) {
@@ -956,6 +969,8 @@ pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
         KeyCode::Char('l'),
         ReedlineEvent::ClearScreen,
     );
+    // Alt+E : retravailler la ligne dans $VISUAL / $EDITOR
+    kb.add_binding(KeyModifiers::ALT, KeyCode::Char('e'), ReedlineEvent::OpenEditor);
 
     let menu = IdeMenu::default()
         .with_name("completion")
@@ -985,6 +1000,18 @@ pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
         .with_edit_mode(Box::new(Emacs::new(kb)))
         .with_transient_prompt(Box::new(TransientPrompt { ok: true }))
         .with_ansi_colors(true);
+    let editeur = sh
+        .get_var("VISUAL")
+        .or_else(|| sh.get_var("EDITOR"))
+        .filter(|e| !e.trim().is_empty())
+        .unwrap_or_else(|| "nano".into());
+    let mut mots = editeur.split_whitespace();
+    if let Some(prog) = mots.next() {
+        let mut c = std::process::Command::new(prog);
+        c.args(mots);
+        let tampon = std::env::temp_dir().join(format!("shsh-ligne-{}.sh", std::process::id()));
+        ed = ed.with_buffer_editor(c, tampon);
+    }
     if !sh.abbrs.is_empty() {
         ed = ed.with_abbreviations(sh.abbrs.clone());
     }

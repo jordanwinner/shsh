@@ -28,10 +28,11 @@ globbing avec `**` récursif, `time`, `set -euxo pipefail`, `shopt`
 **Interactif** — coloration syntaxique en direct (commande inconnue en rose,
 chemins existants soulignés), suggestions grisées tirées de l'historique,
 complétion Tab avec descriptions (fichiers, commandes, variables, sous-commandes
-et branches git, hôtes ssh, cibles make, options `--…` lues dans les pages de
-manuel), recherche Ctrl+R, abréviations (`abbr gs='git status'`), auto-cd,
+et branches git, hôtes ssh, cibles make, paquets apt, unités systemd, processus
+pour `kill`/`pkill`, sous-commandes de docker, cargo, npm, pip, tmux, snap et
+flatpak, scripts `npm run`, options `--…` lues dans les pages de manuel), recherche Ctrl+R, abréviations (`abbr gs='git status'`), auto-cd,
 « vouliez-vous dire … ? », contrôle des tâches complet (Ctrl+Z, `fg`, `bg`,
-`jobs`, `kill %n`), saisie multiligne, `!!` / `!$`.
+`jobs`, `kill %n`), saisie multiligne, `!!` / `!$`, Alt+E pour retravailler la ligne dans `$EDITOR`.
 
 **Prompt Éclipse** — dossier, branche et état git, environnement Python, tâches
 en arrière-plan, code de retour, durée des commandes longues, heure ; les

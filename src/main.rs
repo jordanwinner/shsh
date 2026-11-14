@@ -3,6 +3,7 @@
 mod arith;
 mod ast;
 mod builtins;
+mod completions;
 mod editor;
 mod exec;
 mod expand;
@@ -220,6 +221,13 @@ fn real_main() {
             sh.positional = rest[1..].to_vec();
         }
         sh.interactive = force_interactive;
+        // shsh -ic '…' : comme bash et zsh, la configuration interactive est lue
+        if force_interactive && !norc {
+            let rc = format!("{}/.shshrc", sh.home());
+            if let Err(n) = source_if_exists(&mut sh, &rc) {
+                finish(&mut sh, n);
+            }
+        }
         let r = sh.run_source(&cmd, "");
         let code = result_code(&sh, r).unwrap_or_else(|n| n);
         finish(&mut sh, code);

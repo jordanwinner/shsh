@@ -119,6 +119,17 @@ def run():
     check("complétion de « shadow »", "modes" in text() and "ambiances" in text())
     send(b"\x03", 0.6)
 
+    # --- Complétions des commandes courantes ---
+    mark(); send("apt ins\t", 1.2)
+    check("complétion : sous-commandes d'apt", "install" in text() and "installe des paquets" in text())
+    send(b"\x03", 0.5); mark(); send("systemctl --user status pipew\t", 1.5)
+    check("complétion : unités systemd", "pipewire" in text())
+    send(b"\x03", 0.5); mark(); send("cargo cl\t", 1.2)
+    check("complétion : sous-commandes de cargo", "clippy" in text() and "clean" in text())
+    send(b"\x03", 0.5); mark(); send("pkill shs\t", 1.2)
+    check("complétion : processus", "shsh" in text())
+    send(b"\x03", 0.5)
+
     mark(); send("exit 7\r", 1.0)
     try:
         _, status = os.waitpid(pid, 0)
