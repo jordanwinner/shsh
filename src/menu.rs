@@ -3,7 +3,8 @@
 
 use reedline::{ColumnarMenu, Completer, Editor, Menu, MenuEvent, MenuSettings, Painter, Suggestion};
 
-pub struct MenuFr(pub ColumnarMenu);
+/// Le second champ borne la hauteur du menu en lignes (0 : pas de limite).
+pub struct MenuFr(pub ColumnarMenu, pub u16);
 
 impl Menu for MenuFr {
     fn settings(&self) -> &MenuSettings {
@@ -58,10 +59,12 @@ impl Menu for MenuFr {
         self.0.replace_in_buffer(editor)
     }
     fn menu_required_lines(&self, terminal_columns: u16) -> u16 {
-        self.0.menu_required_lines(terminal_columns)
+        let n = self.0.menu_required_lines(terminal_columns);
+        if self.1 > 0 { n.min(self.1) } else { n }
     }
     fn menu_string(&self, available_lines: u16, use_ansi_coloring: bool) -> String {
-        let s = self.0.menu_string(available_lines, use_ansi_coloring);
+        let lignes = if self.1 > 0 { available_lines.min(self.1) } else { available_lines };
+        let s = self.0.menu_string(lignes, use_ansi_coloring);
         if s.contains("NO RECORDS FOUND") {
             // gris brume : une information, pas une alerte
             return "\x1b[38;2;98;104;140maucun résultat\x1b[0m".to_string();

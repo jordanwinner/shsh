@@ -1306,6 +1306,7 @@ impl Parser {
 
     fn parse_func_body(&mut self, name: String) -> PResult<Command> {
         self.skip_newlines()?;
+        let debut = self.peeked.as_ref().map(|p| p.1).unwrap_or(self.pos).min(self.src.len());
         let kw = match self.peek()? {
             Tok::Word(w, _) => plain_word(w),
             Tok::Op(Op::LParen) => Some("(".to_string()),
@@ -1330,7 +1331,9 @@ impl Parser {
             _ => return self.err("le corps d'une fonction doit être un bloc { … }"),
         };
         let redirs = self.parse_redirs()?;
-        Ok(Command::FuncDef(name, Rc::new(FuncBody { body, redirs })))
+        let fin = self.peeked.as_ref().map(|p| p.1).unwrap_or(self.pos).clamp(debut, self.src.len());
+        let text: String = self.src[debut..fin].iter().collect::<String>().trim_end().to_string();
+        Ok(Command::FuncDef(name, Rc::new(FuncBody { text, body, redirs })))
     }
 
     fn parse_compound(&mut self, kw: &str) -> PResult<Compound> {

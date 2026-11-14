@@ -358,6 +358,9 @@ impl Shell {
         set_signal(Signal::SIGPIPE, SigHandler::SigDfl);
         set_signal(Signal::SIGCHLD, SigHandler::SigDfl);
         // Pièges : réinitialisés dans un sous-shell (sauf les signaux ignorés)
+        if self.traps_parent.is_none() && self.traps.values().any(|v| !v.is_empty()) {
+            self.traps_parent = Some(self.traps.clone());
+        }
         self.traps.retain(|_, v| v.is_empty());
         for sig in 1..65 {
             PENDING[sig].store(false, Ordering::SeqCst);

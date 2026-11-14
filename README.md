@@ -35,7 +35,7 @@ flatpak, scripts `npm run`, options `--…` lues dans les pages de manuel), hist
 `jobs`, `kill %n`), saisie multiligne, `!!` / `!$`, Alt+E pour retravailler la ligne dans `$EDITOR`, Alt+S pour ajouter `sudo`.
 
 **Prompt Éclipse** — dossier (relatif au dépôt git), branche, état et avance/retard sur le distant, environnement Python, tâches
-en arrière-plan, code de retour, durée des commandes longues, heure ; les
+en arrière-plan, code de retour toujours affiché (`✔ 0`, `✘ 137 KILL`), durée des commandes longues, heure ; les
 prompts passés se replient en `❯ commande`.
 
 **Shadow OS** — shsh lit directement l'état du bureau, sans rien ajouter à

@@ -101,6 +101,8 @@ pub struct Shell {
     pub is_subshell: bool,
     pub main_pid: i32,
     pub traps: HashMap<i32, String>,
+    /// Pièges du shell parent, gardés dans un sous-shell pour `trap -p`
+    pub traps_parent: Option<HashMap<i32, String>>,
     pub cmd_cache: HashMap<String, String>,
     pub loop_depth: usize,
     pub func_depth: usize,
@@ -168,6 +170,7 @@ impl Shell {
             is_subshell: false,
             main_pid: std::process::id() as i32,
             traps: HashMap::new(),
+            traps_parent: None,
             cmd_cache: HashMap::new(),
             loop_depth: 0,
             func_depth: 0,

@@ -347,7 +347,8 @@ fn real_main() {
         let info = prompt::PromptInfo {
             cwd: cwd.clone(),
             home: sh.home(),
-            status: if quiet_status { 0 } else { sh.last_status },
+            status: sh.last_status,
+            discret: quiet_status,
             duration: last_duration,
             jobs: sh.jobs.jobs.len(),
             user,
@@ -405,7 +406,8 @@ fn real_main() {
                 // Garde le terminal propre si un programme l'a laissé dans un état bizarre
                 sh.reclaim_terminal(None);
             }
-            RlSignal::CtrlC(_) => {
+            RlSignal::CtrlC(abandonne) => {
+                replier_prompt(&abandonne);
                 sh.last_status = 130;
                 quiet_status = true;
                 last_duration = None;
@@ -432,6 +434,30 @@ fn real_main() {
         let _ = nix::sys::signal::killpg(j.pgid, Signal::SIGCONT);
     }
     finish(&mut sh, code);
+}
+
+/// Après Ctrl+C : remplace le prompt complet par une ligne courte et grisée,
+/// comme le font les commandes validées (l'écran reste lisible).
+fn replier_prompt(saisie: &str) {
+    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+    let cols = if unsafe { libc::ioctl(2, libc::TIOCGWINSZ, &mut ws) } == 0 && ws.ws_col > 0 {
+        ws.ws_col as usize
+    } else {
+        return;
+    };
+    // Lignes occupées à l'écran par la saisie (2 colonnes d'invite, retours à la ligne compris)
+    let lignes: usize = saisie
+        .split('\n')
+        .map(|l| (l.chars().count() + 2).div_ceil(cols).max(1))
+        .sum();
+    let gris = prompt::fg(prompt::BRUME);
+    let r = prompt::RESET;
+    let mut texte = String::new();
+    for (i, l) in saisie.split('\n').enumerate() {
+        texte.push_str(&format!("{gris}{} {l}{r}\r\n", if i == 0 { "❯" } else { "·" }));
+    }
+    // remonte au début du prompt (sa ligne d'infos + la saisie), efface, réécrit
+    eprint!("\x1b[{}A\r\x1b[J{texte}", lignes + 1);
 }
 
 fn url_path(p: &str) -> String {

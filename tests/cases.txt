@@ -346,3 +346,9 @@ echo {a}; echo {fd} > /dev/null; echo "{x}>" ok
 set -u; echo ${nope_var-ok}; echo $nope_var2; echo unreachable
 %%
 echo $LINENO; f() { echo $LINENO; }; f
+%%
+trap 'echo x' ERR; trap -p | grep -c ERR; trap - ERR; false; echo calme
+%%
+trap 'echo bye' EXIT; trap | grep -c EXIT; (trap 'echo sous' EXIT; trap -p | grep -c sous)
+%%
+f() { echo corps; }; declare -f f | grep -c corps; declare -f absent; echo $?

@@ -923,6 +923,17 @@ fn b_declare(sh: &mut Shell, a: &[String]) -> ExecResult {
             names.push(x.clone());
         }
     }
+    if funcs && !names.is_empty() {
+        // declare -f nom… : la définition complète
+        let mut st = 0;
+        for n in &names {
+            match sh.functions.get(n.as_str()) {
+                Some(f) => out(&format!("{n}() {}\n", f.text)),
+                None => st = 1,
+            }
+        }
+        return Ok(st);
+    }
     if funcs {
         let mut v: Vec<&String> = sh.functions.keys().collect();
         v.sort();
@@ -1554,7 +1565,10 @@ fn b_type(sh: &mut Shell, a: &[String]) -> ExecResult {
                 s.push_str(&if kind_only {
                     "function\n".into()
                 } else {
-                    format!("{name} est une fonction\n")
+                    match sh.functions.get(name.as_str()) {
+                        Some(f) if !f.text.is_empty() => format!("{name} est une fonction\n{name}() {}\n", f.text),
+                        _ => format!("{name} est une fonction\n"),
+                    }
                 });
             }
             if (!found || all) && lookup(name).is_some() {
@@ -2373,7 +2387,12 @@ fn b_test(sh: &mut Shell, a: &[String]) -> ExecResult {
 
 fn b_trap(sh: &mut Shell, a: &[String]) -> ExecResult {
     if a.len() == 1 || a[1] == "-p" {
-        let mut v: Vec<(&i32, &String)> = sh.traps.iter().collect();
+        // Dans un sous-shell (trap -p | …), on montre les pièges du shell parent
+        let source = match &sh.traps_parent {
+            Some(p) if sh.traps.values().all(|c| c.is_empty()) => p,
+            _ => &sh.traps,
+        };
+        let mut v: Vec<(&i32, &String)> = source.iter().collect();
         v.sort();
         let s: String = v
             .iter()
@@ -2433,6 +2452,7 @@ fn b_trap(sh: &mut Shell, a: &[String]) -> ExecResult {
                 }
             }
             Some(cmd) => {
+                sh.traps_parent = None;
                 sh.traps.insert(sig, cmd.clone());
                 if sig > 0 {
                     if let Ok(sg) = Signal::try_from(sig) {

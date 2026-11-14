@@ -143,6 +143,14 @@ def run():
     mark(); send("commande_absente_xyz\r", 1.5)
     check("commande introuvable : message clair", "commande introuvable" in text())
 
+    # --- Code de retour dans le prompt ---
+    mark(); send("true\r", 0.9)
+    check("code de retour : succès affiché", "✔ 0" in text())
+    mark(); send("(exit 42)\r", 0.9)
+    check("code de retour : échec affiché", "✘ 42" in text())
+    mark(); send("ligne abandonnee", 0.4); send(b"\x03", 0.8)
+    check("Ctrl+C : code 130 discret", "130 INT" in text())
+
     mark(); send("exit 7\r", 1.0)
     try:
         _, status = os.waitpid(pid, 0)

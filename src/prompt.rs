@@ -38,6 +38,8 @@ pub struct PromptInfo {
     pub mode: Option<String>,
     /// Mission en cours : (adresse, nom).
     pub cible: Option<(String, String)>,
+    /// Ctrl+C au prompt : le code (130) est montré sans alarme
+    pub discret: bool,
 }
 
 pub struct ShshPrompt {
@@ -307,14 +309,20 @@ impl ShshPrompt {
             }
             right.push_str(&format!("{}{icone} {nom}{RESET}  ", fg(couleur)));
         }
-        if info.status != 0 {
-            let label = match info.status {
-                130 => "INT".to_string(),
-                148 => "STOP".to_string(),
-                s if s > 128 => crate::shell::signal_name(s - 128),
-                s => s.to_string(),
+        // Code de retour de la dernière commande : toujours affiché
+        if info.status == 0 {
+            right.push_str(&format!("{}✔ 0{RESET}  ", fg(VERT)));
+        } else {
+            // 130 → « 130 INT » : le nombre exact, plus le nom du signal quand c'en est un
+            let signal = match info.status {
+                s if s > 128 && s < 193 => format!(" {}", crate::shell::signal_name(s - 128)),
+                _ => String::new(),
             };
-            right.push_str(&format!("{b}✘ {label}{RESET}  "));
+            if info.discret {
+                right.push_str(&format!("{m}{}{signal}{RESET}  ", info.status));
+            } else {
+                right.push_str(&format!("{b}{BOLD}✘ {}{RESET}{b}{signal}{RESET}  ", info.status));
+            }
         }
         if let Some(d) = info.duration {
             if d >= Duration::from_secs(2) {
@@ -326,7 +334,7 @@ impl ShshPrompt {
         ShshPrompt {
             left: format!("{left}\n"),
             right,
-            ok: info.status == 0,
+            ok: info.status == 0 || info.discret,
             root: info.root,
         }
     }

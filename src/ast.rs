@@ -110,6 +110,8 @@ pub enum Command {
 
 #[derive(Debug)]
 pub struct FuncBody {
+    /// Source du corps, tel qu'écrit (pour `type` et `declare -f`)
+    pub text: String,
     pub body: Compound,
     pub redirs: Vec<Redir>,
 }
