@@ -121,7 +121,9 @@ def run():
 
     # --- Complétions des commandes courantes ---
     mark(); send("apt ins\t", 1.2)
-    check("complétion : sous-commandes d'apt", "install" in text() and "installe des paquets" in text())
+    check("complétion : candidat unique complété directement", "apt install" in text())
+    send(b"\x03", 0.5); mark(); send("apt re\t", 1.2)
+    check("complétion : sous-commandes d'apt décrites", "remove" in text() and "réinstalle des paquets" in text())
     send(b"\x03", 0.5); mark(); send("systemctl --user status pipew\t", 1.5)
     check("complétion : unités systemd", "pipewire" in text())
     send(b"\x03", 0.5); mark(); send("cargo cl\t", 1.2)
@@ -129,6 +131,17 @@ def run():
     send(b"\x03", 0.5); mark(); send("pkill shs\t", 1.2)
     check("complétion : processus", "shsh" in text())
     send(b"\x03", 0.5)
+
+    # --- Historique en liste (Ctrl+R) et raccourcis ---
+    mark(); send("echo motif-rare-42\r", 0.8); mark(); send("motif-rare", 0.5); send(b"\x12", 1.2)
+    check("Ctrl+R : retrouve la ligne dans l'historique", "echo motif-rare-42" in text())
+    send(b"\x03", 0.5); mark(); send("echo ", 0.4); send(b"\x12", 1.2)
+    check("Ctrl+R : liste filtrée (plusieurs résultats)", text().count("echo") >= 3)
+    send(b"\x1b", 0.5); send(b"\x03", 0.5)
+    mark(); send("id -u", 0.4); send(b"\x1bs", 0.6); send(b"\x03", 0.5)
+    check("Alt+S ajoute sudo", "sudo id -u" in text())
+    mark(); send("commande_absente_xyz\r", 1.5)
+    check("commande introuvable : message clair", "commande introuvable" in text())
 
     mark(); send("exit 7\r", 1.0)
     try:

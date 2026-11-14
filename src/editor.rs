@@ -5,8 +5,8 @@ use crate::prompt::*;
 use crate::shell::Shell;
 use nu_ansi_term::{Color, Style};
 use reedline::{
-    default_emacs_keybindings, CompletionResult, Completer, DefaultHinter, DescriptionMode, EditCommand,
-    Emacs, FileBackedHistory, Highlighter, IdeMenu, KeyCode, KeyModifiers, MenuBuilder, Reedline,
+    default_emacs_keybindings, CompletionResult, Completer, DefaultHinter, EditCommand,
+    Emacs, FileBackedHistory, Highlighter, ColumnarMenu, KeyCode, KeyModifiers, MenuBuilder, Reedline,
     ReedlineEvent, ReedlineMenu, Span, StyledText, Suggestion, ValidationResult, Validator,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -171,6 +171,10 @@ fn expand_tilde(w: &str, home: &str) -> String {
         w.to_string()
     }
 }
+
+/// Fond de la ligne sélectionnée dans les menus : violet profond, lisible
+/// avec le texte comme avec les descriptions.
+const SELECTION: Color = Color::Rgb(52, 46, 110);
 
 fn rgb(c: (u8, u8, u8)) -> Color {
     Color::Rgb(c.0, c.1, c.2)
@@ -465,7 +469,10 @@ impl ShshCompleter {
                 } else {
                     (shown, "fichier", Style::new().fg(rgb(TEXTE)))
                 };
-                make(val, Some(desc.into()), span, !*is_dir, Some(style))
+                let _ = desc;
+                let mut sug = make(val, None, span, !*is_dir, Some(style));
+                sug.display_override = Some(if *is_dir { format!("{name}/") } else { name.clone() });
+                sug
             })
             .collect()
     }
@@ -969,23 +976,46 @@ pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
         KeyCode::Char('l'),
         ReedlineEvent::ClearScreen,
     );
+    // Alt+S : ajoute « sudo » devant la ligne (ou devant la commande précédente si la ligne est vide)
+    kb.add_binding(
+        KeyModifiers::ALT,
+        KeyCode::Char('s'),
+        ReedlineEvent::Edit(vec![
+            EditCommand::MoveToStart { select: false },
+            EditCommand::InsertString("sudo ".into()),
+            EditCommand::MoveToEnd { select: false },
+        ]),
+    );
     // Alt+E : retravailler la ligne dans $VISUAL / $EDITOR
     kb.add_binding(KeyModifiers::ALT, KeyCode::Char('e'), ReedlineEvent::OpenEditor);
 
-    let menu = IdeMenu::default()
+    // Menu de complétion façon liste : valeur à gauche, description alignée à droite ;
+    // sans description (fichiers), les candidats se rangent en colonnes.
+    let menu = ColumnarMenu::default()
         .with_name("completion")
-        .with_marker("❯ ")
-        .with_default_border()
-        .with_description_mode(DescriptionMode::PreferRight)
-        .with_min_description_width(12)
-        .with_max_description_width(48)
-        .with_max_completion_height(14)
-        .with_padding(1)
+        .with_marker("\x1b[1;38;2;124;108;255m❯\x1b[0m ")
+        .with_columns(5)
+        .with_column_padding(3)
         .with_text_style(Style::new().fg(rgb(TEXTE)))
-        .with_selected_text_style(Style::new().fg(Color::Rgb(7, 7, 11)).on(rgb(VIOLET)).bold())
-        .with_description_text_style(Style::new().fg(rgb(BRUME)).italic())
-        .with_match_text_style(Style::new().fg(rgb(BRAISE)).bold())
-        .with_selected_match_text_style(Style::new().fg(Color::White).on(rgb(VIOLET)).bold());
+        .with_selected_text_style(Style::new().fg(Color::Rgb(236, 235, 250)).on(SELECTION).bold())
+        .with_description_text_style(Style::new().fg(Color::Rgb(128, 134, 172)))
+        .with_match_text_style(Style::new().fg(rgb(VIOLET_CLAIR)).bold())
+        .with_selected_match_text_style(Style::new().fg(Color::Rgb(236, 235, 250)).on(SELECTION).bold());
+
+    // Ctrl+R : l'historique en liste, filtré à mesure qu'on tape
+    let historique = ColumnarMenu::default()
+        .with_name("historique")
+        .with_marker("\x1b[1;38;2;224;175;104m≡\x1b[0m ")
+        .with_columns(1)
+        .with_text_style(Style::new().fg(rgb(TEXTE)))
+        .with_selected_text_style(Style::new().fg(Color::Rgb(236, 235, 250)).on(SELECTION).bold())
+        .with_match_text_style(Style::new().fg(rgb(VIOLET_CLAIR)).bold())
+        .with_selected_match_text_style(Style::new().fg(Color::Rgb(236, 235, 250)).on(SELECTION).bold());
+    kb.add_binding(
+        KeyModifiers::CONTROL,
+        KeyCode::Char('r'),
+        ReedlineEvent::UntilFound(vec![ReedlineEvent::Menu("historique".into()), ReedlineEvent::MenuNext]),
+    );
 
     let mut ed = Reedline::create()
         .with_history(history)
@@ -994,8 +1024,9 @@ pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
         .with_hinter(Box::new(DefaultHinter::default().with_style(Style::new().fg(rgb(BRUME)))))
         .with_completer(Box::new(ShshCompleter { data: data.clone() }))
         .with_partial_completions(true)
-        .with_quick_completions(false)
-        .with_menu(ReedlineMenu::EngineCompleter(Box::new(menu)))
+        .with_quick_completions(true)
+        .with_menu(ReedlineMenu::EngineCompleter(Box::new(crate::menu::MenuFr(menu))))
+        .with_menu(ReedlineMenu::HistoryMenu(Box::new(crate::menu::MenuFr(historique))))
         .with_validator(Box::new(ShshValidator))
         .with_edit_mode(Box::new(Emacs::new(kb)))
         .with_transient_prompt(Box::new(TransientPrompt { ok: true }))
@@ -1030,7 +1061,16 @@ pub fn clear_history(sh: &Shell) {
 }
 
 /// « Vouliez-vous dire … ? » : commande la plus proche (distance d'édition ≤ 2).
-pub fn suggest_command(sh: &Shell, name: &str) -> Option<String> {
+/// Commandes très courantes : à distance égale, on les propose en premier.
+const COURANTES: &[&str] = &[
+    "git", "ls", "cd", "cat", "grep", "make", "sudo", "apt", "docker", "python3", "ssh", "vim", "nano", "curl",
+    "wget", "tar", "find", "echo", "mkdir", "rm", "cp", "mv", "man", "kill", "top", "htop", "systemctl", "cargo",
+    "npm", "pip", "node", "code", "tmux", "less", "head", "tail", "chmod", "chown", "ping", "nmap", "gcc", "clear",
+    "exit", "history", "which", "touch", "diff", "sed", "awk", "sort", "unzip", "zip", "df", "du", "ps", "ip",
+];
+
+/// Commande la plus proche d'un nom mal tapé, avec sa distance d'édition.
+pub fn suggest_command(sh: &Shell, name: &str) -> Option<(String, usize)> {
     if name.len() < 2 {
         return None;
     }
@@ -1045,18 +1085,39 @@ pub fn suggest_command(sh: &Shell, name: &str) -> Option<String> {
             }
         }
     }
+    let lettres = |x: &str| {
+        let mut v: Vec<char> = x.chars().collect();
+        v.sort_unstable();
+        v
+    };
+    let tri_nom = lettres(name);
     let max = if name.len() <= 3 { 1 } else { 2 };
-    let mut best: Option<(usize, String)> = None;
+    // (score, longueur, nom, distance) : le plus petit score gagne
+    let mut best: Option<(i32, usize, String, usize)> = None;
     for c in cands {
         if (c.len() as isize - name.len() as isize).abs() > max as isize {
             continue;
         }
         let dist = damerau(name, &c);
-        if dist <= max && best.as_ref().is_none_or(|(b, bn)| dist < *b || (dist == *b && c.len() < bn.len())) {
-            best = Some((dist, c));
+        if dist == 0 || dist > max {
+            continue;
+        }
+        let mut score = dist as i32 * 10;
+        if lettres(&c) == tri_nom {
+            score -= 4; // mêmes lettres dans le désordre : la faute la plus fréquente
+        }
+        if c.chars().next() == name.chars().next() {
+            score -= 2;
+        }
+        if COURANTES.contains(&c.as_str()) {
+            score -= 3;
+        }
+        let cle = (score, c.len());
+        if best.as_ref().is_none_or(|(s, l, _, _)| cle < (*s, *l)) {
+            best = Some((score, c.len(), c, dist));
         }
     }
-    best.map(|b| b.1)
+    best.map(|b| (b.2, b.3))
 }
 
 fn damerau(a: &str, b: &str) -> usize {

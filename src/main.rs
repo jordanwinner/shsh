@@ -8,6 +8,7 @@ mod editor;
 mod exec;
 mod expand;
 mod jobs;
+mod menu;
 mod parser;
 mod prompt;
 mod shadow;

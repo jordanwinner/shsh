@@ -794,13 +794,16 @@ impl Shell {
 
     fn exec_simple(&mut self, cmd: &SimpleCommand, forked: bool, text: &str) -> ExecResult {
         self.cmdsub_status = None;
+        self.lineno = cmd.line;
         let argv = match self.expand_words(&cmd.words) {
             Ok(v) => v,
             Err(e) => {
+                // Comme bash : une variable non définie sous set -u vaut 127
+                let code = if e.ends_with("variable non définie") { 127 } else { 1 };
                 self.error(e);
                 self.close_procsubs();
                 if !self.interactive {
-                    return Err(Flow::Exit(1));
+                    return Err(Flow::Exit(code));
                 }
                 return Ok(1);
             }
@@ -1073,8 +1076,17 @@ impl Shell {
         }
         let mut msg = format!("commande introuvable : {name}");
         if self.interactive {
-            if let Some(s) = crate::editor::suggest_command(self, name) {
-                msg.push_str(&format!("\n      vouliez-vous dire \x1b[1;38;2;124;108;255m{s}\x1b[0m ?"));
+            let violet = "\x1b[1;38;2;124;108;255m";
+            let proche = crate::editor::suggest_command(self, name);
+            // Une faute d'une seule frappe l'emporte ; sinon un paquet du même nom est plus probable.
+            let paquet = match &proche {
+                Some((_, 1)) => None,
+                _ => crate::completions::paquet_fournissant(name),
+            };
+            if let Some(p) = paquet {
+                msg.push_str(&format!("\n      elle est dans le paquet {p} : {violet}sudo apt install {p}\x1b[0m"));
+            } else if let Some((s, _)) = proche {
+                msg.push_str(&format!("\n      vouliez-vous dire {violet}{s}\x1b[0m ?"));
             }
         }
         self.error(msg);
@@ -1362,7 +1374,29 @@ impl Shell {
             In | ReadWrite | DupIn | HereStr => 0,
             _ => 1,
         };
-        let fd = r.fd.unwrap_or(default_fd);
+        let mut fd = r.fd.unwrap_or(default_fd);
+        let mut save = save;
+        if let Some(var) = &r.var {
+            let ferme = matches!(r.op, DupIn | DupOut)
+                && matches!(&r.target, RedirTarget::Word(w) if crate::parser::plain_word(w).as_deref() == Some("-"));
+            if ferme {
+                // {nom}>&- : ferme le descripteur rangé dans la variable
+                if let Some(n) = self.get_var(var).and_then(|v| v.parse::<i32>().ok()) {
+                    close_fd(n);
+                }
+                return Ok(());
+            }
+            // Réserve un descripteur libre (≥ 10), que la redirection remplacera
+            let nul = open_file("/dev/null", libc::O_RDONLY)?;
+            let libre = unsafe { libc::fcntl(nul, libc::F_DUPFD, 10) };
+            close_fd(nul);
+            if libre < 0 {
+                return Err(format!("{var} : plus de descripteur de fichier libre"));
+            }
+            self.set_var(var, libre.to_string())?;
+            fd = libre;
+            save = false; // il reste ouvert après la commande, comme dans bash
+        }
         let src: i32 = match &r.target {
             RedirTarget::Here(body) => {
                 let text = match &*body.borrow() {

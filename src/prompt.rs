@@ -92,9 +92,9 @@ pub fn git_info(cwd: &str) -> Option<(PathBuf, String)> {
 }
 
 /// État de l'arbre de travail, borné dans le temps (pas de prompt lent).
-fn git_dirty(root: &Path) -> Option<(bool, bool)> {
+fn git_dirty(root: &Path) -> Option<GitEtat> {
     let mut child = Command::new("git")
-        .args(["--no-optional-locks", "status", "--porcelain=v1", "--ignore-submodules=dirty", "-unormal"])
+        .args(["--no-optional-locks", "status", "--porcelain=v1", "-b", "--ignore-submodules=dirty", "-unormal"])
         .current_dir(root)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -120,9 +120,23 @@ fn git_dirty(root: &Path) -> Option<(bool, bool)> {
     let s = String::from_utf8_lossy(&out.stdout);
     let mut staged = false;
     let mut changed = false;
+    let (mut avance, mut retard) = (0u32, 0u32);
     for l in s.lines() {
         let b = l.as_bytes();
         if b.len() < 2 {
+            continue;
+        }
+        // « ## main...origin/main [ahead 1, behind 2] »
+        if let Some(entete) = l.strip_prefix("## ") {
+            if let Some(i) = entete.rfind('[') {
+                for morceau in entete[i + 1..].trim_end_matches(']').split(", ") {
+                    if let Some(n) = morceau.strip_prefix("ahead ") {
+                        avance = n.parse().unwrap_or(0);
+                    } else if let Some(n) = morceau.strip_prefix("behind ") {
+                        retard = n.parse().unwrap_or(0);
+                    }
+                }
+            }
             continue;
         }
         if b[0] == b'?' {
@@ -136,7 +150,37 @@ fn git_dirty(root: &Path) -> Option<(bool, bool)> {
             changed = true;
         }
     }
-    Some((staged, changed))
+    Some(GitEtat { staged, changed, avance, retard })
+}
+
+/// État du dépôt affiché dans le prompt.
+struct GitEtat {
+    staged: bool,
+    changed: bool,
+    /// Commits locaux pas encore poussés / commits distants pas encore récupérés.
+    avance: u32,
+    retard: u32,
+}
+
+/// Chemin affiché dans un dépôt git : à partir du dossier du dépôt
+/// (« shsh/src » plutôt que « ~/Dev/shsh/src »).
+fn chemin_depot(cwd: &str, racine: &Path) -> Option<(String, String)> {
+    let racine_s = racine.to_str()?;
+    let nom = racine.file_name()?.to_str()?;
+    let reste = cwd.strip_prefix(racine_s)?.trim_start_matches('/');
+    if reste.is_empty() {
+        return Some((String::new(), nom.to_string()));
+    }
+    let comps: Vec<&str> = reste.split('/').collect();
+    let (dernier, parents) = comps.split_last()?;
+    let milieu = if parents.len() > 3 {
+        format!("…/{}/", parents[parents.len() - 2..].join("/"))
+    } else if parents.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", parents.join("/"))
+    };
+    Some((format!("{nom}/{milieu}"), dernier.to_string()))
 }
 
 pub fn short_path(cwd: &str, home: &str) -> (String, String) {
@@ -193,26 +237,40 @@ impl ShshPrompt {
             left.push_str(&format!("{col}{BOLD}{}{RESET}{m}@{RESET}{col}{}{RESET} ", info.user, info.host));
         }
         // Dossier : parents en violet, dossier courant en gras clair
-        let (head, last) = short_path(&info.cwd, &info.home);
-        let icon = if info.cwd == info.home {
+        let git = git_info(&info.cwd);
+        let (head, last) = git
+            .as_ref()
+            .filter(|(racine, _)| racine.to_str() != Some(info.home.as_str()))
+            .and_then(|(racine, _)| chemin_depot(&info.cwd, racine))
+            .unwrap_or_else(|| short_path(&info.cwd, &info.home));
+        let inscriptible = std::ffi::CString::new(info.cwd.as_str())
+            .map(|c| unsafe { libc::access(c.as_ptr(), libc::W_OK) } == 0)
+            .unwrap_or(true);
+        let icon = if !inscriptible {
+            "\u{f023}" // cadenas : on ne peut pas écrire ici
+        } else if info.cwd == info.home {
             "\u{f015}" // maison
-        } else if info.cwd.starts_with(&info.home) {
-            "\u{f07c}" // dossier ouvert
         } else {
-            "\u{f023}" // cadenas : hors du dossier personnel
+            "\u{f07c}" // dossier ouvert
         };
         left.push_str(&format!("{v}{icon} {RESET}{v}{head}{RESET}{vc}{BOLD}{last}{RESET}"));
 
         // Git
-        if let Some((root, branch)) = git_info(&info.cwd) {
+        if let Some((root, branch)) = git {
             left.push_str(&format!(" {m}on{RESET} {b}\u{e725} {branch}{RESET}"));
-            if let Some((staged, changed)) = git_dirty(&root) {
+            if let Some(e) = git_dirty(&root) {
                 let mut marks = String::new();
-                if staged {
+                if e.staged {
                     marks.push_str(&format!("{}+", fg(VERT)));
                 }
-                if changed {
+                if e.changed {
                     marks.push_str(&format!("{}●", fg(OR)));
+                }
+                if e.avance > 0 {
+                    marks.push_str(&format!("{}{}⇡{}", if marks.is_empty() { "" } else { " " }, fg(CYAN), e.avance));
+                }
+                if e.retard > 0 {
+                    marks.push_str(&format!("{}{}⇣{}", if marks.is_empty() { "" } else { " " }, fg(CYAN), e.retard));
                 }
                 if !marks.is_empty() {
                     left.push_str(&format!(" {marks}{RESET}"));
@@ -256,7 +314,7 @@ impl ShshPrompt {
                 s if s > 128 => crate::shell::signal_name(s - 128),
                 s => s.to_string(),
             };
-            right.push_str(&format!("{b}\u{f00d} {label}{RESET}  "));
+            right.push_str(&format!("{b}✘ {label}{RESET}  "));
         }
         if let Some(d) = info.duration {
             if d >= Duration::from_secs(2) {

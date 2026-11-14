@@ -107,6 +107,8 @@ pub struct Shell {
     /// > 0 quand on évalue une condition (if, while, &&, ||, !) : pas de set -e.
     pub cond_depth: usize,
     pub start: Instant,
+    /// Ligne de la commande en cours ($LINENO)
+    pub lineno: usize,
     pub cmdsub_status: Option<i32>,
     pub dir_stack: Vec<String>,
     pub history_path: Option<std::path::PathBuf>,
@@ -171,6 +173,7 @@ impl Shell {
             func_depth: 0,
             cond_depth: 0,
             start: Instant::now(),
+            lineno: 0,
             cmdsub_status: None,
             dir_stack: Vec::new(),
             history_path: None,
@@ -255,6 +258,7 @@ impl Shell {
                 return Some(((x >> 33) % 32768).to_string());
             }
             "SECONDS" => return Some(self.start.elapsed().as_secs().to_string()),
+            "LINENO" => return Some(self.lineno.to_string()),
             "UID" if !self.vars.contains_key("UID") => return Some(nix::unistd::getuid().to_string()),
             "EUID" if !self.vars.contains_key("EUID") => return Some(nix::unistd::geteuid().to_string()),
             "HOSTNAME" if !self.vars.contains_key("HOSTNAME") => {
@@ -703,7 +707,12 @@ impl Shell {
 
     pub fn error(&self, msg: impl AsRef<str>) {
         crate::exec::flush_stdout();
-        eprintln!("shsh: {}", msg.as_ref());
+        // En interactif, le nom du shell en couleur braise repère l'erreur d'un coup d'œil
+        if self.interactive && std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+            eprintln!("\x1b[1;38;2;255;77;141mshsh\x1b[0m\x1b[38;2;98;104;140m:\x1b[0m {}", msg.as_ref());
+        } else {
+            eprintln!("shsh: {}", msg.as_ref());
+        }
     }
 
     /// Recherche d'un exécutable dans PATH (avec cache).

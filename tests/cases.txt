@@ -336,3 +336,13 @@ set -e; trap 'echo piege' ERR; echo a; false; echo jamais
 printf '%(%Y-%m-%d)T\n' 0; printf '%(%Y)T' -1 | wc -c; printf '%e|%E|%.2e|%e\n' 1000 0.00012 123456 0
 %%
 kill -l 15; kill -l TERM; kill -l 9 2; kill -l HUP INT
+%%
+exec {fd}>/tmp/shsh_fd.$$; echo x >&$fd; echo y >&${fd}; exec {fd}>&-; cat /tmp/shsh_fd.$$; rm -f /tmp/shsh_fd.$$; [ $fd -ge 10 ] && echo haut
+%%
+exec {in}</etc/hostname; read -r h <&$in; exec {in}<&-; [ -n "$h" ] && echo lu
+%%
+echo {a}; echo {fd} > /dev/null; echo "{x}>" ok
+%%
+set -u; echo ${nope_var-ok}; echo $nope_var2; echo unreachable
+%%
+echo $LINENO; f() { echo $LINENO; }; f

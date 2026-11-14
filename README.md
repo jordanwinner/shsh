@@ -19,7 +19,7 @@ les alias et fonctions d'un `~/.zshrc`.
 `if/while/until/for/case`, `for ((…))`, fonctions et `local`, `[[ … ]]` avec
 `=~` et `BASH_REMATCH`, `(( … ))`, tableaux (`a=(…)`, `${a[@]}`, `${!a[@]}`,
 creux), tableaux associatifs (`declare -A`), entiers (`declare -i`), `case`
-avec `;&` et `;;&`, `${x@Q}` `${x@U}`, `${!préfixe*}`, toutes les
+avec `;&` et `;;&`, `${x@Q}` `${x@U}`, `${!préfixe*}`, `{fd}>fichier`, `$LINENO`, toutes les
 expansions `${…}` (défaut, motifs, remplacement, casse, sous-chaînes,
 indirection), `$(…)`, `$(< fichier)`, `<(…)`, accolades `{a,b}` `{1..10}`,
 globbing avec `**` récursif, `time`, `set -euxo pipefail`, `shopt`
@@ -30,11 +30,11 @@ chemins existants soulignés), suggestions grisées tirées de l'historique,
 complétion Tab avec descriptions (fichiers, commandes, variables, sous-commandes
 et branches git, hôtes ssh, cibles make, paquets apt, unités systemd, processus
 pour `kill`/`pkill`, sous-commandes de docker, cargo, npm, pip, tmux, snap et
-flatpak, scripts `npm run`, options `--…` lues dans les pages de manuel), recherche Ctrl+R, abréviations (`abbr gs='git status'`), auto-cd,
-« vouliez-vous dire … ? », contrôle des tâches complet (Ctrl+Z, `fg`, `bg`,
-`jobs`, `kill %n`), saisie multiligne, `!!` / `!$`, Alt+E pour retravailler la ligne dans `$EDITOR`.
+flatpak, scripts `npm run`, options `--…` lues dans les pages de manuel), historique en liste filtrée (Ctrl+R), abréviations (`abbr gs='git status'`), auto-cd,
+« vouliez-vous dire … ? » (ou le paquet apt qui fournit la commande absente), contrôle des tâches complet (Ctrl+Z, `fg`, `bg`,
+`jobs`, `kill %n`), saisie multiligne, `!!` / `!$`, Alt+E pour retravailler la ligne dans `$EDITOR`, Alt+S pour ajouter `sudo`.
 
-**Prompt Éclipse** — dossier, branche et état git, environnement Python, tâches
+**Prompt Éclipse** — dossier (relatif au dépôt git), branche, état et avance/retard sur le distant, environnement Python, tâches
 en arrière-plan, code de retour, durée des commandes longues, heure ; les
 prompts passés se replient en `❯ commande`.
 

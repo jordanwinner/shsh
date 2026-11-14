@@ -2728,10 +2728,12 @@ fn b_help(_sh: &mut Shell, a: &[String]) -> ExecResult {
     );
     s.push_str(&format!("  {p}Édition{r}\n"));
     for (k, t) in [
-        ("Tab", "complétion (commandes, fichiers, variables, options git…)"),
+        ("Tab", "complétion : commandes, fichiers, paquets, services, processus…"),
         ("→ / Ctrl+F", "accepte la suggestion grisée"),
         ("Alt+F", "accepte un mot de la suggestion"),
-        ("Ctrl+R", "recherche dans l'historique"),
+        ("Ctrl+R", "historique en liste, filtré à mesure qu'on tape"),
+        ("Alt+S", "ajoute sudo devant la ligne"),
+        ("Alt+E", "ouvre la ligne dans l'éditeur"),
         ("Alt+Entrée", "nouvelle ligne sans exécuter"),
         ("Ctrl+Z / fg", "suspend / reprend une tâche"),
         ("!! / !$", "dernière commande / dernier argument"),

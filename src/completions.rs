@@ -405,3 +405,18 @@ pub fn candidats(cmd: &str, avant: &[String], mot: &str, cwd: &str) -> Option<Ve
     };
     Some(v)
 }
+
+/// Paquet apt qui fournit une commande absente (base de command-not-found).
+pub fn paquet_fournissant(commande: &str) -> Option<String> {
+    if !commande.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.+".contains(&b)) {
+        return None;
+    }
+    if !std::path::Path::new("/var/lib/command-not-found/commands.db").exists() {
+        return None;
+    }
+    let script = "import sqlite3,sys\n\
+c=sqlite3.connect('file:/var/lib/command-not-found/commands.db?mode=ro',uri=True)\n\
+r=c.execute('select p.name from commands c join packages p on p.pkgID=c.pkgID where c.command=? order by p.priority desc limit 1',(sys.argv[1],)).fetchone()\n\
+print(r[0] if r else '')";
+    lignes("python3", &["-I", "-c", script, commande]).into_iter().next().filter(|p| !p.is_empty())
+}

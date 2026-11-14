@@ -130,6 +130,8 @@ pub struct SimpleCommand {
     pub assigns: Vec<Assign>,
     pub words: Vec<Word>,
     pub redirs: Vec<Redir>,
+    /// Ligne du source où commence la commande ($LINENO)
+    pub line: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -213,6 +215,8 @@ pub enum RedirTarget {
 
 #[derive(Debug, Clone)]
 pub struct Redir {
+    /// {nom}>fichier : le shell choisit un descripteur libre et le range dans `nom`
+    pub var: Option<String>,
     pub fd: Option<i32>,
     pub op: RedirOp,
     pub target: RedirTarget,

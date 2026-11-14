@@ -1170,7 +1170,7 @@ impl Parser {
                     // « time » seul en fin de ligne
                     if matches!(self.peek()?, Tok::Eof | Tok::Newline | Tok::Op(Op::Semi)) {
                         let text = String::from("time");
-                        return Ok(Pipeline { negate, timed, cmds: vec![Command::Simple(SimpleCommand { assigns: vec![], words: vec![vec![Part::Lit(":".into())]], redirs: vec![] })], text });
+                        return Ok(Pipeline { negate, timed, cmds: vec![Command::Simple(SimpleCommand { assigns: vec![], words: vec![vec![Part::Lit(":".into())]], redirs: vec![], line: 0 })], text });
                     }
                 }
                 _ => break,
@@ -1187,6 +1187,7 @@ impl Parser {
             if both {
                 // cmd |& cmd  ==  cmd 2>&1 | cmd
                 let r = Redir {
+                    var: None,
                     fd: Some(2),
                     op: RedirOp::DupOut,
                     target: RedirTarget::Word(vec![Part::Lit("1".into())]),
@@ -1594,6 +1595,7 @@ impl Parser {
                     _ => return self.err("fichier attendu après la redirection"),
                 };
                 Ok(Some(Redir {
+                    var: None,
                     fd,
                     op,
                     target: RedirTarget::Word(target),
@@ -1617,6 +1619,7 @@ impl Parser {
                     body: body.clone(),
                 });
                 Ok(Some(Redir {
+                    var: None,
                     fd,
                     op: RedirOp::In,
                     target: RedirTarget::Here(body),
@@ -1627,10 +1630,12 @@ impl Parser {
     }
 
     fn parse_simple(&mut self) -> PResult<Command> {
+        let debut = self.peeked.as_ref().map(|p| p.1).unwrap_or(self.pos).min(self.src.len());
         let mut cmd = SimpleCommand {
             assigns: Vec::new(),
             words: Vec::new(),
             redirs: Vec::new(),
+            line: 1 + self.src[..debut].iter().filter(|c| **c == '\n').count(),
         };
         loop {
             if let Some(r) = self.try_redir()? {
@@ -1734,6 +1739,19 @@ impl Parser {
                             cmd.words.push(vec![Part::ArrayLit(a.name, a.append, items)]);
                             continue;
                         }
+                    }
+                }
+            }
+            // {nom}>fichier, {nom}<fichier, {nom}>&- : collé à la redirection
+            if self.peeked.is_none() && matches!(self.cur(), Some('<' | '>')) {
+                let nom = plain_word(&w)
+                    .and_then(|t| t.strip_prefix('{').and_then(|r| r.strip_suffix('}')).map(String::from))
+                    .filter(|n| is_name(n));
+                if let Some(nom) = nom {
+                    if let Some(mut r) = self.try_redir()? {
+                        r.var = Some(nom);
+                        cmd.redirs.push(r);
+                        continue;
                     }
                 }
             }
