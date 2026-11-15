@@ -30,6 +30,64 @@ pub struct EdData {
     pub history_ignore: Option<(String, regex::Regex)>,
     /// Options extraites des pages de manuel, par page
     pub man_opts: HashMap<String, Vec<(String, String)>>,
+    /// Ctrl+R : filtre de l'historique tant que le menu est ouvert (None = menu fermé)
+    pub hist_mode: Option<ModeHist>,
+    pub mission: String,
+    pub journal: std::path::PathBuf,
+    /// journal lu une fois tant qu'il ne change pas : (date de modification, entrées)
+    pub journal_cache: Option<(std::time::SystemTime, std::sync::Arc<Vec<crate::journal::Entree>>)>,
+}
+
+/// Les vues de l'historique, dans l'ordre où Ctrl+R les fait défiler.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ModeHist {
+    Tout,
+    Ici,
+    Mission,
+    Echecs,
+}
+
+impl ModeHist {
+    pub fn suivant(self) -> Self {
+        match self {
+            ModeHist::Tout => ModeHist::Ici,
+            ModeHist::Ici => ModeHist::Mission,
+            ModeHist::Mission => ModeHist::Echecs,
+            ModeHist::Echecs => ModeHist::Tout,
+        }
+    }
+    pub fn libelle(self) -> &'static str {
+        match self {
+            ModeHist::Tout => "tout",
+            ModeHist::Ici => "ce dossier",
+            ModeHist::Mission => "mission",
+            ModeHist::Echecs => "échecs",
+        }
+    }
+}
+
+impl EdData {
+    /// Lignes de commande retenues par le filtre courant (None = pas de filtre).
+    fn lignes_filtre(&mut self) -> Option<HashSet<String>> {
+        let mode = self.hist_mode?;
+        if mode == ModeHist::Tout {
+            return None;
+        }
+        let mtime = std::fs::metadata(&self.journal).and_then(|m| m.modified()).ok();
+        let a_jour = matches!((&self.journal_cache, mtime), (Some((t, _)), Some(m)) if *t == m);
+        if !a_jour {
+            let v = crate::journal::lire_fichier(&self.journal);
+            self.journal_cache = mtime.map(|m| (m, std::sync::Arc::new(v)));
+        }
+        let entrees = self.journal_cache.as_ref().map(|(_, v)| v.clone()).unwrap_or_default();
+        let garde = |e: &crate::journal::Entree| match mode {
+            ModeHist::Ici => e.cwd == self.cwd,
+            ModeHist::Mission => !self.mission.is_empty() && e.mission == self.mission,
+            ModeHist::Echecs => e.code != 0 && e.code != 130,
+            ModeHist::Tout => true,
+        };
+        Some(entrees.iter().filter(|e| garde(e)).map(|e| e.ligne.clone()).collect())
+    }
 }
 
 impl EdData {
@@ -97,6 +155,8 @@ pub fn sync_data(sh: &Shell, data: &Shared) {
     d.path = sh.get_var("PATH").unwrap_or_default();
     d.cwd = sh.cwd();
     d.home = sh.home();
+    d.mission = sh.get_var("MISSION").unwrap_or_default();
+    d.journal = crate::journal::chemin(sh);
     let pat = sh.get_var("SHSH_HISTORY_IGNORE").unwrap_or_default();
     if d.history_ignore.as_ref().map(|h| h.0.as_str()) != Some(pat.as_str()) {
         d.history_ignore = if pat.is_empty() {
@@ -139,7 +199,13 @@ impl reedline::History for FilteredHistory {
         self.inner.count(q)
     }
     fn search(&self, q: reedline::SearchQuery) -> reedline::Result<Vec<reedline::HistoryItem>> {
-        self.inner.search(q)
+        let res = self.inner.search(q)?;
+        // Ctrl+R ouvert sur une vue (ce dossier, mission, échecs) : seulement ce que le journal y range
+        let filtre = self.data.lock().ok().and_then(|mut d| d.lignes_filtre());
+        Ok(match filtre {
+            Some(f) => res.into_iter().filter(|h| f.contains(h.command_line.trim_end())).collect(),
+            None => res,
+        })
     }
     fn update(
         &mut self,
@@ -1011,10 +1077,11 @@ pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
         .with_selected_text_style(Style::new().fg(Color::Rgb(236, 235, 250)).on(SELECTION).bold())
         .with_match_text_style(Style::new().fg(rgb(VIOLET_CLAIR)).bold())
         .with_selected_match_text_style(Style::new().fg(Color::Rgb(236, 235, 250)).on(SELECTION).bold());
+    // Ctrl+R ouvre l'historique ; menu ouvert, Ctrl+R change de vue : tout → ce dossier → mission → échecs
     kb.add_binding(
         KeyModifiers::CONTROL,
         KeyCode::Char('r'),
-        ReedlineEvent::UntilFound(vec![ReedlineEvent::Menu("historique".into()), ReedlineEvent::MenuNext]),
+        ReedlineEvent::UntilFound(vec![ReedlineEvent::Menu("historique".into()), ReedlineEvent::MenuPageNext]),
     );
 
     let mut ed = Reedline::create()
@@ -1025,8 +1092,8 @@ pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
         .with_completer(Box::new(ShshCompleter { data: data.clone() }))
         .with_partial_completions(true)
         .with_quick_completions(true)
-        .with_menu(ReedlineMenu::EngineCompleter(Box::new(crate::menu::MenuFr(menu, 14))))
-        .with_menu(ReedlineMenu::HistoryMenu(Box::new(crate::menu::MenuFr(historique, 12))))
+        .with_menu(ReedlineMenu::EngineCompleter(Box::new(crate::menu::MenuFr::new(menu, 14))))
+        .with_menu(ReedlineMenu::HistoryMenu(Box::new(crate::menu::MenuFr::historique(historique, 12, data.clone()))))
         .with_validator(Box::new(ShshValidator))
         .with_edit_mode(Box::new(Emacs::new(kb)))
         .with_transient_prompt(Box::new(TransientPrompt { ok: true }))

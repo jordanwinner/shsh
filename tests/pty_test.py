@@ -173,6 +173,27 @@ def run():
     check("SHSH_JOURNAL=0 coupe le journal", "coupe-journal" not in open(tsv).read())
     send("SHSH_JOURNAL=1\r", 0.6)
 
+    # --- Ctrl+R par contexte (vues tirées du journal) ---
+    os.makedirs("/tmp/shsh-ctx-a", exist_ok=True)
+    send("cd /tmp/shsh-ctx-a\r", 0.6); send("echo ctxzz-ici\r", 0.6)
+    send("cd /\r", 0.6); send("echo ctxzz-ailleurs\r", 0.6); send("ctxzz-introuvable\r", 1.2)
+    send("cd /tmp/shsh-ctx-a\r", 0.6)
+    mark(); send("ctxzz", 0.4); send(b"\x12", 1.2)
+    t = text()
+    check("Ctrl+R : vue « tout »", "≡ tout" in t and "ctxzz-ici" in t and "ctxzz-ailleurs" in t)
+    mark(); send(b"\x12", 1.2); t = text()
+    check("Ctrl+R ×2 : vue « ce dossier »", "≡ ce dossier" in t and "ctxzz-ici" in t and "ctxzz-ailleurs" not in t)
+    mark(); send(b"\x12", 1.2); t = text()
+    check("Ctrl+R ×3 : vue « mission »", "≡ mission" in t and "ctxzz-ailleurs" in t)
+    mark(); send(b"\x12", 1.2); t = text()
+    check("Ctrl+R ×4 : vue « échecs »", "≡ échecs" in t and "ctxzz-introuvable" in t and "ctxzz-ici" not in t)
+    mark(); send(b"\x12", 1.2); t = text()
+    check("Ctrl+R ×5 : retour à « tout »", "≡ tout" in t)
+    send(b"\x1b", 0.5); send(b"\x03", 0.6)
+    mark(); send("ctxzz", 0.4); send(b"\x12", 1.2)
+    check("Ctrl+R rouvert : repart sur « tout »", "≡ tout" in text())
+    send(b"\x1b", 0.5); send(b"\x03", 0.6); send("cd /tmp\r", 0.5)
+
     # --- Preuves de mission ---
     import glob
     mark(); send("preuve printf '\\033[32mvert\\033[0m-preuve\\n'\r", 3.0)

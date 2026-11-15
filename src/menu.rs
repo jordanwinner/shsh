@@ -1,10 +1,35 @@
 //! Menu de reedline habillé pour shsh : même comportement que le menu en
 //! colonnes, mais le message « aucun résultat » est en français et discret.
 
+use crate::editor::{ModeHist, Shared};
 use reedline::{ColumnarMenu, Completer, Editor, Menu, MenuEvent, MenuSettings, Painter, Suggestion};
 
-/// Le second champ borne la hauteur du menu en lignes (0 : pas de limite).
-pub struct MenuFr(pub ColumnarMenu, pub u16);
+/// `.1` borne la hauteur du menu en lignes (0 : pas de limite). Pour l'historique,
+/// `hist` porte l'état partagé : la vue (tout, ce dossier, mission, échecs) change
+/// au deuxième Ctrl+R (événement « page suivante ») et s'affiche dans l'indicateur.
+pub struct MenuFr(pub ColumnarMenu, pub u16, Option<Shared>, String);
+
+impl MenuFr {
+    pub fn new(menu: ColumnarMenu, max: u16) -> Self {
+        let ind = menu.indicator().to_string();
+        MenuFr(menu, max, None, ind)
+    }
+    pub fn historique(menu: ColumnarMenu, max: u16, data: Shared) -> Self {
+        let mut m = MenuFr(menu, max, Some(data), String::new());
+        m.indiquer(ModeHist::Tout);
+        m
+    }
+    fn indiquer(&mut self, mode: ModeHist) {
+        self.3 = format!("\x1b[1;38;2;224;175;104m≡ {}\x1b[0m ", mode.libelle());
+    }
+    fn mode(&self, m: Option<ModeHist>) {
+        if let Some(d) = &self.2 {
+            if let Ok(mut d) = d.lock() {
+                d.hist_mode = m;
+            }
+        }
+    }
+}
 
 impl Menu for MenuFr {
     fn settings(&self) -> &MenuSettings {
@@ -14,7 +39,7 @@ impl Menu for MenuFr {
         self.0.name()
     }
     fn indicator(&self) -> &str {
-        self.0.indicator()
+        &self.3
     }
     fn is_active(&self) -> bool {
         self.0.is_active()
@@ -35,7 +60,33 @@ impl Menu for MenuFr {
         self.0.handle_menu_event(event)
     }
     fn menu_event(&mut self, event: MenuEvent) {
-        self.0.menu_event(event)
+        if self.2.is_none() {
+            return self.0.menu_event(event);
+        }
+        match event {
+            MenuEvent::Activate(q) => {
+                self.mode(Some(ModeHist::Tout));
+                self.indiquer(ModeHist::Tout);
+                self.0.menu_event(MenuEvent::Activate(q))
+            }
+            // deuxième Ctrl+R : vue suivante, puis la liste est recalculée
+            MenuEvent::NextPage => {
+                let suivant = self
+                    .2
+                    .as_ref()
+                    .and_then(|d| d.lock().ok().and_then(|d| d.hist_mode))
+                    .unwrap_or(ModeHist::Tout)
+                    .suivant();
+                self.mode(Some(suivant));
+                self.indiquer(suivant);
+                self.0.menu_event(MenuEvent::Edit(false))
+            }
+            MenuEvent::Deactivate => {
+                self.mode(None);
+                self.0.menu_event(MenuEvent::Deactivate)
+            }
+            e => self.0.menu_event(e),
+        }
     }
     fn can_quick_complete(&self) -> bool {
         self.0.can_quick_complete()

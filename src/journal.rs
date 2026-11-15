@@ -107,7 +107,9 @@ pub fn noter(sh: &Shell, ligne: &str, code: i32, d: Duration, cwd: &str, mission
         let _ = std::fs::create_dir_all(dir);
     }
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
-        let _ = writeln!(f, "{quand}\t{ms}\t{code}\t{}\t{}", echapper(cwd), echapper(ligne.trim_end()));
+        // 6e colonne : dossier de la mission en cours (vide sinon) — absente des lignes anciennes
+        let m = mission.map(|(d, _, _)| d).unwrap_or("");
+        let _ = writeln!(f, "{quand}\t{ms}\t{code}\t{}\t{}\t{}", echapper(cwd), echapper(ligne.trim_end()), echapper(m));
     }
     let Some((dossier, adresse, nom)) = mission else { return };
     if dossier.is_empty() || !std::path::Path::new(dossier).is_dir() {
@@ -142,28 +144,34 @@ pub fn noter(sh: &Shell, ligne: &str, code: i32, d: Duration, cwd: &str, mission
     );
 }
 
-struct Entree {
-    quand: i64,
-    ms: u64,
-    code: i32,
-    cwd: String,
-    ligne: String,
+pub struct Entree {
+    pub quand: i64,
+    pub ms: u64,
+    pub code: i32,
+    pub cwd: String,
+    pub ligne: String,
+    pub mission: String,
 }
 
-fn lire(sh: &Shell) -> Vec<Entree> {
-    let Ok(s) = std::fs::read_to_string(chemin(sh)) else { return Vec::new() };
+pub fn lire_fichier(p: &std::path::Path) -> Vec<Entree> {
+    let Ok(s) = std::fs::read_to_string(p) else { return Vec::new() };
     s.lines()
         .filter_map(|l| {
-            let mut c = l.splitn(5, '\t');
+            let mut c = l.split('\t');
             Some(Entree {
                 quand: c.next()?.parse().ok()?,
                 ms: c.next()?.parse().ok()?,
                 code: c.next()?.parse().ok()?,
                 cwd: desechapper(c.next()?),
                 ligne: desechapper(c.next()?),
+                mission: c.next().map(desechapper).unwrap_or_default(),
             })
         })
         .collect()
+}
+
+fn lire(sh: &Shell) -> Vec<Entree> {
+    lire_fichier(&chemin(sh))
 }
 
 const AIDE: &str = "journal — les commandes tapées, avec heure, dossier, code de retour et durée
