@@ -55,6 +55,17 @@ Shadow OS, les mêmes lignes vont aussi dans `$MISSION/journal.md`, que
 (espace en tête, `SHSH_HISTORY_IGNORE`) ne sont jamais écrites ; `SHSH_JOURNAL=0`
 coupe tout.
 
+**Assistant `?`** — `? lister les ports ouverts de la cible` : la commande
+proposée arrive dans la ligne de saisie, jamais exécutée d'office (Entrée la
+lance, Ctrl+C l'abandonne), avec une phrase d'explication. Les commandes
+destructrices (`rm -rf ~/*`, `dd of=/dev/…`, `mkfs`…) sont signalées en rouge.
+`? pourquoi ça a planté` joint la dernière commande en échec. Modèle : celui de
+jordan-cli (Groq) ou `GROQ_API_KEY` / `SHSH_ASSISTANT_MODELE`. Seuls partent la
+question, le dossier relatif à `~`, la cible de la mission Shadow et la dernière
+commande ratée ; la clé passe par un fichier d'en-têtes privé, jamais par la
+ligne de commande. `SHSH_ASSISTANT_CONTEXTE=0` n'envoie que la question,
+`SHSH_ASSISTANT=0` coupe l'assistant.
+
 **Crochets** — `shsh_precmd`, `shsh_preexec "$ligne"`, `chpwd`.
 `SHSH_HISTORY_IGNORE` (regex) exclut les lignes sensibles de l'historique.
 

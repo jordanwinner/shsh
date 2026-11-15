@@ -173,6 +173,41 @@ def run():
     check("SHSH_JOURNAL=0 coupe le journal", "coupe-journal" not in open(tsv).read())
     send("SHSH_JOURNAL=1\r", 0.6)
 
+    # --- Assistant « ? » (faux serveur local à la place de Groq) ---
+    import http.server, threading
+    recu = {}
+    class Faux(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            recu["corps"] = self.rfile.read(int(self.headers["Content-Length"])).decode()
+            recu["auth"] = self.headers.get("Authorization")
+            q = json.loads(recu["corps"])["messages"][1]["content"]
+            cmd = "rm -rf ~/*" if "effacer" in q else "echo reponse-assistant-ok"
+            contenu = json.dumps({"commande": cmd, "explication": "Explication de test."})
+            r = json.dumps({"choices": [{"message": {"role": "assistant", "content": contenu}}]}).encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(r))); self.end_headers(); self.wfile.write(r)
+        def log_message(self, *a): pass
+    serveur = http.server.HTTPServer(("127.0.0.1", 0), Faux)
+    threading.Thread(target=serveur.serve_forever, daemon=True).start()
+    send(f"SHSH_ASSISTANT_URL=http://127.0.0.1:{serveur.server_port}/ GROQ_API_KEY=cle-de-test-123\r", 0.6)
+    mark(); send("?\r", 0.8)
+    check("? seul : aide de l'assistant", "propose une commande" in text())
+    mark(); send("? afficher un message\r", 3.0)
+    check("? : explication affichée", "Explication de test." in text())
+    check("? : commande pré-remplie, pas exécutée", "echo reponse-assistant-ok" in text() and "\nreponse-assistant-ok" not in text())
+    mark(); send("\r", 1.0)
+    check("? : Entrée exécute la proposition", "reponse-assistant-ok" in text())
+    check("? : clé envoyée en en-tête", recu.get("auth") == "Bearer cle-de-test-123")
+    ps = "\n".join(l for l in os.popen("ps -eo args").read().splitlines() if "ps -eo" not in l)
+    if "cle-de-test-123" in ps: print([l for l in ps.splitlines() if "cle-de-test" in l])
+    check("? : clé jamais dans la ligne de commande", "cle-de-test-123" not in ps)
+    check("? : contexte de mission, sans chemin personnel", "10.9.8.7" in recu.get("corps", "") and "/home/" not in recu.get("corps", ""))
+    mark(); send("? effacer mes fichiers\r", 3.0); send(b"\x03", 0.6)
+    check("? : commande destructrice signalée", "commande destructrice" in text())
+    mark(); send("SHSH_ASSISTANT=0\r", 0.5); send("? x\r", 1.0)
+    check("SHSH_ASSISTANT=0 coupe l'assistant", "commande introuvable" in text() or "introuvable" in text())
+    send("SHSH_ASSISTANT=1\r", 0.5)
+    serveur.shutdown()
+
     mark(); send("exit 7\r", 1.0)
     try:
         _, status = os.waitpid(pid, 0)

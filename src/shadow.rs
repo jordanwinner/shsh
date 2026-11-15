@@ -33,7 +33,7 @@ fn dossier_etat(sh: &Shell) -> PathBuf {
 }
 
 /// Valeur d'un champ texte dans un petit objet JSON plat.
-fn champ(json: &str, cle: &str) -> Option<String> {
+pub fn champ(json: &str, cle: &str) -> Option<String> {
     let motif = format!("\"{cle}\"");
     let reste = &json[json.find(&motif)? + motif.len()..];
     let reste = reste.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
@@ -159,6 +159,7 @@ pub fn sous_commandes(cmd: &str, avant: &[String]) -> &'static [(&'static str, &
             ("fetch", "infos système"),
             ("status", "état de tout"),
             ("maj", "met tout Shadow à jour : système, apps, arsenal, shsh"),
+            ("docteur", "vérifie que Shadow est entier et le répare"),
             ("rapport", "rapport de la mission en cours (Markdown)"),
         ],
         ("shadow", Some("modes")) if avant.len() == 1 => MODES,
@@ -179,6 +180,17 @@ pub fn sous_commandes(cmd: &str, avant: &[String]) -> &'static [(&'static str, &
         ("shadow", Some("wall")) if avant.len() == 1 => {
             &[("next", "fond suivant"), ("dl", "télécharger des fonds"), ("slideshow", "diaporama")]
         }
+        ("shadow", Some("docteur")) if avant.len() == 1 => &[
+            ("reparer", "applique les réparations proposées"),
+            ("photo", "retient les extensions actives comme référence"),
+            ("minuteur", "passage automatique toutes les 15 min"),
+            ("json", "diagnostic en JSON"),
+        ],
+        ("shadow", Some("maj")) if avant.len() == 1 => &[
+            ("verifier", "ce qui attend, sans rien changer"),
+            ("--sans", "sauter des étapes"),
+            ("--seulement", "seulement certaines étapes"),
+        ],
         ("shadow", Some("keycast")) if avant.len() == 1 => &[("on", ""), ("off", ""), ("toggle", "")],
         ("shadow", Some("todo")) if avant.len() == 1 => &[
             ("list", "voir la liste"),

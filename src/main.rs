@@ -1,6 +1,7 @@
 //! shsh — le shadow shell.
 
 mod arith;
+mod assistant;
 mod ast;
 mod builtins;
 mod completions;
@@ -301,6 +302,9 @@ fn real_main() {
     let mut first_prompt = true;
     // Ctrl+C au prompt : $? vaut 130 mais on ne l'affiche pas en erreur
     let mut quiet_status = false;
+    // Assistant « ? » : commande proposée à placer dans la prochaine ligne
+    let mut pre_rempli: Option<String> = None;
+    let mut derniere: Option<(String, i32)> = None;
 
     let code = loop {
         // Tâches terminées en arrière-plan
@@ -370,6 +374,9 @@ fn real_main() {
             eprintln!();
         }
         first_prompt = false;
+        if let Some(c) = pre_rempli.take() {
+            ed.run_edit_commands(&[reedline::EditCommand::InsertString(c)]);
+        }
         let sig = match ed.read_line(&p) {
             Ok(s) => s,
             Err(e) => {
@@ -383,6 +390,33 @@ fn real_main() {
                 quiet_status = false;
                 if line.trim().is_empty() {
                     last_duration = None;
+                    continue;
+                }
+                // « ? question » : l'assistant propose une commande, rien n'est exécuté
+                if let Some(q) = assistant::question(&sh, &line) {
+                    last_duration = None;
+                    quiet_status = true;
+                    if q.is_empty() {
+                        eprintln!("{}", assistant::AIDE);
+                        continue;
+                    }
+                    eprint!("  \x1b[38;2;124;108;255m◐\x1b[0m \x1b[38;2;110;106;150mréflexion…\x1b[0m");
+                    let r = assistant::demander(&sh, &q, derniere.as_ref().map(|(l, c)| (l.as_str(), *c)));
+                    eprint!("\r\x1b[K");
+                    match r {
+                        Ok(rep) => {
+                            if !rep.explication.is_empty() {
+                                eprintln!("  \x1b[38;2;124;108;255m◐\x1b[0m \x1b[38;2;156;152;191m{}\x1b[0m", rep.explication);
+                            }
+                            if !rep.commande.is_empty() {
+                                if assistant::destructrice(&rep.commande) {
+                                    eprintln!("  \x1b[38;2;255;77;141m⚠ commande destructrice : relis-la avant Entrée\x1b[0m");
+                                }
+                                pre_rempli = Some(rep.commande);
+                            }
+                        }
+                        Err(e) => sh.error(format!("assistant : {e}")),
+                    }
                     continue;
                 }
                 // La mission a pu changer dans un autre terminal depuis l'affichage du prompt
@@ -409,6 +443,9 @@ fn real_main() {
                         Ok(d) => d.history_ignore.as_ref().is_some_and(|(_, re)| re.is_match(&line)),
                         Err(_) => true,
                     };
+                if let Ok(code) = &rc {
+                    derniere = if ignoree { None } else { Some((line.trim().to_string(), *code)) };
+                }
                 // `exit` (rc = Err) ne fait que fermer le shell : rien à noter
                 if !ignoree && rc.is_ok() {
                     let code = *rc.as_ref().unwrap_or(&0);
