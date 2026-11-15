@@ -8,6 +8,7 @@ mod editor;
 mod exec;
 mod expand;
 mod jobs;
+mod journal;
 mod menu;
 mod parser;
 mod prompt;
@@ -392,6 +393,7 @@ fn real_main() {
                 }
                 let first = line.split_whitespace().next().unwrap_or("").to_string();
                 eprint!("\x1b]0;{first} · {title}\x07");
+                let cwd_avant = sh.cwd();
                 let t0 = Instant::now();
                 INTERRUPTED.store(false, Ordering::SeqCst);
                 if first != "exit" {
@@ -399,7 +401,24 @@ fn real_main() {
                 }
                 let r = sh.run_source(&line, "");
                 last_duration = Some(t0.elapsed());
-                match result_code(&sh, r) {
+                let rc = result_code(&sh, r);
+                // Journal : mêmes exclusions que l'historique (espace en tête, SHSH_HISTORY_IGNORE)
+                let ignoree = line.starts_with(' ')
+                    || data
+                        .lock()
+                        .ok()
+                        .and_then(|d| d.history_ignore.as_ref().map(|(_, re)| re.is_match(&line)))
+                        .unwrap_or(false);
+                // `exit` (rc = Err) ne fait que fermer le shell : rien à noter
+                if !ignoree && rc.is_ok() {
+                    let code = *rc.as_ref().unwrap_or(&0);
+                    let mission = shadow
+                        .cible
+                        .as_ref()
+                        .map(|c| (c.dossier.as_str(), c.adresse.as_str(), c.nom.as_str()));
+                    journal::noter(&sh, &line, code, last_duration.unwrap_or_default(), &cwd_avant, mission);
+                }
+                match rc {
                     Ok(s) => sh.last_status = s,
                     Err(n) => break n,
                 }

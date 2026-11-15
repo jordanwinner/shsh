@@ -151,6 +151,28 @@ def run():
     mark(); send("ligne abandonnee", 0.4); send(b"\x03", 0.8)
     check("Ctrl+C : code 130 discret", "130 INT" in text())
 
+    # --- Journal des commandes (et journal de mission) ---
+    mission = os.path.join(ETAT, "mission")
+    os.makedirs(mission)
+    with open(os.path.join(SHADOW, "cible"), "w") as f:
+        json.dump({"cible": "10.9.8.7", "nom": "banc", "dossier": mission}, f)
+    tsv = os.path.join(os.environ.get("TEST_DATA", "/tmp/shsh-test-data"), "shsh", "journal.tsv")
+    send("\r", 0.6)
+    send("echo journal-ok\r", 0.6); send(" echo secret-espace\r", 0.6)
+    send("SHSH_HISTORY_IGNORE='motdepasse'\r", 0.6); send("echo motdepasse=x\r", 0.6)
+    send("(exit 3)\r", 0.6)
+    jm = open(os.path.join(mission, "journal.md")).read() if os.path.exists(os.path.join(mission, "journal.md")) else ""
+    check("journal de mission écrit", "# Journal de mission — banc (10.9.8.7)" in jm and "`echo journal-ok`" in jm and "✘ 3" in jm)
+    check("journal : lignes masquées jamais écrites", "secret-espace" not in jm and "motdepasse=x" not in jm
+          and "motdepasse=x" not in open(tsv).read() and "secret-espace" not in open(tsv).read())
+    mark(); send("journal -n 50\r", 0.9)
+    check("journal : liste avec code et durée", "echo journal-ok" in text() and "✘ 3" in text() and " s " in text())
+    mark(); send("journal echecs\r", 0.9)
+    check("journal echecs", "(exit 3)" in text() and "journal-ok" not in text())
+    send("SHSH_JOURNAL=0\r", 0.6); send("echo coupe-journal\r", 0.6)
+    check("SHSH_JOURNAL=0 coupe le journal", "coupe-journal" not in open(tsv).read())
+    send("SHSH_JOURNAL=1\r", 0.6)
+
     mark(); send("exit 7\r", 1.0)
     try:
         _, status = os.waitpid(pid, 0)

@@ -46,6 +46,15 @@ bureau (Pentest, Focus, Jeu, Nuit) apparaît à droite. Une `$CIBLE` posée à l
 main n'est jamais écrasée. Tab complète `shadow …` avec ses sous-commandes et
 les modes installés. `SHSH_SHADOW=0` coupe le tout.
 
+**Journal** — chaque commande tapée est notée avec son heure, son dossier, son
+code de retour et sa durée (`~/.local/share/shsh/journal.tsv`). `journal` affiche
+les dernières ; `journal ici`, `journal echecs`, `journal lentes`,
+`journal cherche MOTIF`, `journal aujourdhui` filtrent. Pendant une mission
+Shadow OS, les mêmes lignes vont aussi dans `$MISSION/journal.md`, que
+`shadow rapport` transforme en rapport. Les lignes exclues de l'historique
+(espace en tête, `SHSH_HISTORY_IGNORE`) ne sont jamais écrites ; `SHSH_JOURNAL=0`
+coupe tout.
+
 **Crochets** — `shsh_precmd`, `shsh_preexec "$ligne"`, `chpwd`.
 `SHSH_HISTORY_IGNORE` (regex) exclut les lignes sensibles de l'historique.
 

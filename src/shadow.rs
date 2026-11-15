@@ -158,6 +158,8 @@ pub fn sous_commandes(cmd: &str, avant: &[String]) -> &'static [(&'static str, &
             ("dub", "traduction du son en direct"),
             ("fetch", "infos système"),
             ("status", "état de tout"),
+            ("maj", "met tout Shadow à jour : système, apps, arsenal, shsh"),
+            ("rapport", "rapport de la mission en cours (Markdown)"),
         ],
         ("shadow", Some("modes")) if avant.len() == 1 => MODES,
         ("shadow-modes", None) => MODES,
@@ -212,7 +214,7 @@ const FENETRES: &[(&str, &str)] = &[
     ("etat", "mode en cours"),
     ("restaurer", "réglages d'origine"),
 ];
-const CIBLE: &[(&str, &str)] = &[("fin", "terminer la mission"), ("terminaux", "brancher les autres shells")];
+const CIBLE: &[(&str, &str)] = &[("fin", "terminer la mission"), ("rapport", "rapport Markdown de la mission"), ("terminaux", "brancher les autres shells")];
 
 /// Vrai quand l'argument attendu est un identifiant de mode.
 pub fn attend_mode(cmd: &str, avant: &[String]) -> bool {

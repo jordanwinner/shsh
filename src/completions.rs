@@ -181,6 +181,17 @@ const FLATPAK: Table = &[
     ("remote-ls", "contenu d'un dépôt"),
 ];
 
+const JOURNAL: Table = &[
+    ("ici", "lancées dans ce dossier"),
+    ("echecs", "celles qui ont échoué"),
+    ("lentes", "les plus longues"),
+    ("cherche", "celles qui contiennent un motif"),
+    ("aujourdhui", "celles d'aujourd'hui"),
+    ("mission", "journal de la mission Shadow en cours"),
+    ("chemin", "où le journal est rangé"),
+    ("aide", "aide du journal"),
+];
+
 const JOURNALCTL_ABSENT: Table = &[];
 
 fn table(cmd: &str) -> Table {
@@ -194,6 +205,7 @@ fn table(cmd: &str) -> Table {
         "tmux" => TMUX,
         "snap" => SNAP,
         "flatpak" => FLATPAK,
+        "journal" => JOURNAL,
         _ => JOURNALCTL_ABSENT,
     }
 }
