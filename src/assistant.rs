@@ -122,8 +122,9 @@ const CONSIGNE: &str = "Tu es l'assistant intégré à shsh, le shell de Shadow 
 compatible bash ; outils Kali disponibles via « shadow arsenal run OUTIL » s'ils ne sont pas installés). \
 On te décrit un besoin en français : réponds UNIQUEMENT par un objet JSON \
 {\"commande\": \"...\", \"explication\": \"...\"}. « commande » tient sur une ligne, s'exécute telle quelle \
-dans bash, sans sudo sauf si c'est indispensable. Pendant une mission, utilise $CIBLE et range les sorties \
-dans $MISSION/scans/ (ex. nmap -oA). « explication » : une phrase courte en français, qui signale tout effet \
+dans bash, sans sudo sauf si c'est indispensable. Pendant une mission, et seulement pour les outils qui visent \
+la cible (scan, énumération, attaque), utilise $CIBLE et range leurs sorties dans $MISSION/scans/ (ex. nmap -oA) ; \
+les autres commandes restent ordinaires, sans redirection ajoutée. « explication » : une phrase courte en français, qui signale tout effet \
 destructeur. Si la demande n'appelle pas de commande, laisse « commande » vide et réponds dans « explication ».";
 
 /// Fichier d'en-têtes qui porte la clé : nom imprévisible, privé, supprimé quoi qu'il arrive.
