@@ -6,9 +6,9 @@
 //!
 //! Le modèle est celui de jordan-cli (Groq, `~/.jordan-cli/config.json`), ou
 //! `GROQ_API_KEY` / `SHSH_ASSISTANT_MODELE`. Ce qui part chez Groq : la
-//! question, le dossier courant relatif à ~ (jamais le chemin complet), la
-//! cible de la mission Shadow en cours, et la dernière commande si elle a
-//! échoué. `SHSH_ASSISTANT_CONTEXTE=0` n'envoie que la question ;
+//! question, le dossier courant, la cible de la mission Shadow en cours, et la
+//! dernière commande si elle a échoué — tous expurgés (`expurger`) : le dossier
+//! personnel devient ~ et l'identifiant devient « utilisateur », où qu'ils soient. `SHSH_ASSISTANT_CONTEXTE=0` n'envoie que la question ;
 //! `SHSH_ASSISTANT=0` coupe l'assistant.
 
 use crate::shadow::champ;
@@ -69,21 +69,41 @@ fn json_texte(s: &str) -> String {
     o
 }
 
+/// Retire ce qui identifie l'utilisateur : dossier personnel → ~, identifiant → « utilisateur ».
+pub fn expurger(sh: &Shell, texte: &str) -> String {
+    let mut t = texte.to_string();
+    let home = sh.home();
+    if home.len() > 1 {
+        t = t.replace(&home, "~");
+    }
+    let mut noms: Vec<String> = Vec::new();
+    for v in ["USER", "LOGNAME"] {
+        if let Some(n) = sh.get_var(v).filter(|n| n.len() >= 2) {
+            noms.push(n);
+        }
+    }
+    if let Some(n) = home.rsplit('/').next().filter(|n| n.len() >= 2) {
+        noms.push(n.to_string());
+    }
+    noms.sort_by_key(|n| std::cmp::Reverse(n.len()));
+    for n in noms {
+        t = t.replace(&n, "utilisateur");
+    }
+    t
+}
+
 /// Contexte envoyé avec la question : rien qui nomme l'utilisateur.
 pub fn contexte(sh: &Shell, derniere: Option<(&str, i32)>) -> String {
     if sh.get_var("SHSH_ASSISTANT_CONTEXTE").as_deref() == Some("0") {
         return String::new();
     }
-    let cwd = sh.cwd();
-    let dossier = crate::builtins::tilde_path(sh, &cwd);
-    // Hors du dossier personnel, seul le chemin système est envoyé (pas de /home/…/)
-    let dossier = if dossier.starts_with('~') || !cwd.starts_with("/home/") { dossier } else { "(autre dossier personnel)".into() };
-    let mut c = format!("Dossier courant : {dossier}\n");
+    let mut c = format!("Dossier courant : {}\n", expurger(sh, &sh.cwd()));
     let etat = crate::shadow::lire(sh);
     if let Some(ci) = &etat.cible {
         c.push_str(&format!(
             "Mission en cours (CTF / test autorisé) : cible {} « {} », disponible dans $CIBLE ; dossier de mission $MISSION (scans/, butin/).\n",
-            ci.adresse, ci.nom
+            ci.adresse,
+            expurger(sh, &ci.nom)
         ));
     }
     if let Some(m) = &etat.mode {
@@ -91,7 +111,7 @@ pub fn contexte(sh: &Shell, derniere: Option<(&str, i32)>) -> String {
     }
     if let Some((ligne, code)) = derniere {
         if code != 0 {
-            c.push_str(&format!("Dernière commande, en échec (code {code}) : {ligne}\n"));
+            c.push_str(&format!("Dernière commande, en échec (code {code}) : {}\n", expurger(sh, ligne)));
         }
     }
     c
@@ -108,7 +128,7 @@ destructeur. Si la demande n'appelle pas de commande, laisse « commande » vide
 pub fn demander(sh: &Shell, question: &str, derniere: Option<(&str, i32)>) -> Result<Reponse, String> {
     let cle = cle(sh).ok_or("pas de clé Groq : GROQ_API_KEY ou ~/.jordan-cli/config.json")?;
     let modele = sh.get_var("SHSH_ASSISTANT_MODELE").filter(|m| !m.is_empty()).unwrap_or_else(|| MODELE.into());
-    let utilisateur = format!("{}Besoin : {question}", contexte(sh, derniere));
+    let utilisateur = format!("{}Besoin : {}", contexte(sh, derniere), expurger(sh, question));
     let corps = format!(
         "{{\"model\":{},\"temperature\":0.2,\"max_tokens\":2048,\"response_format\":{{\"type\":\"json_object\"}},\
 \"messages\":[{{\"role\":\"system\",\"content\":{}}},{{\"role\":\"user\",\"content\":{}}}]}}",
@@ -224,5 +244,13 @@ mod tests {
         assert!(!destructrice("rm fichier.txt"));
         assert!(!destructrice("rm -f /tmp/x.lock"));
         assert!(!destructrice("nmap -sV $CIBLE"));
+    }
+
+    #[test]
+    fn expurgation() {
+        let mut sh = Shell::new();
+        sh.set_exported("HOME", "/home/alice".into());
+        sh.set_exported("USER", "alice".into());
+        assert_eq!(expurger(&sh, "cat /home/alice/x /media/alice/y /tmp/-home-alice/z"), "cat ~/x /media/utilisateur/y /tmp/-home-utilisateur/z");
     }
 }
