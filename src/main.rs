@@ -409,7 +409,7 @@ fn real_main() {
                                 eprintln!("  \x1b[38;2;124;108;255m◐\x1b[0m \x1b[38;2;156;152;191m{}\x1b[0m", rep.explication);
                             }
                             if !rep.commande.is_empty() {
-                                if assistant::destructrice(&rep.commande) {
+                                if assistant::destructrice(&rep.commande, &sh.home()) {
                                     eprintln!("  \x1b[38;2;255;77;141m⚠ commande destructrice : relis-la avant Entrée\x1b[0m");
                                 }
                                 pre_rempli = Some(rep.commande);
