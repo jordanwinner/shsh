@@ -368,6 +368,7 @@ fn real_main() {
             shlvl: sh.get_var("SHLVL").and_then(|s| s.parse().ok()).unwrap_or(1),
             mode: shadow.mode.clone(),
             cible: shadow.cible.as_ref().map(|c| (c.adresse.clone(), c.nom.clone())),
+            furtif: shadow.furtif,
         };
         let p = prompt::ShshPrompt::build(&info);
         // Une ligne d'air entre la sortie précédente et le prompt

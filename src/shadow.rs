@@ -18,6 +18,8 @@ pub struct Etat {
     /// Mode du bureau, seulement s'il n'est pas le mode habituel.
     pub mode: Option<String>,
     pub cible: Option<Cible>,
+    /// Mode furtif : (Tor demandé, Tor réellement actif). None = inactif.
+    pub furtif: Option<(bool, bool)>,
 }
 
 /// Variable témoin : ce que shsh a lui-même posé dans `$CIBLE`, pour ne
@@ -86,7 +88,15 @@ pub fn lire(sh: &Shell) -> Etat {
             dossier: champ(&j, "dossier").unwrap_or_default(),
         })
     });
-    Etat { mode, cible }
+    // mode furtif : état posé par shadow-furtif ; le marqueur /run disparaît au redémarrage
+    let furtif = std::fs::read_to_string(dir.join("furtif")).ok().and_then(|j| {
+        if !j.contains("\"actif\": true") {
+            return None;
+        }
+        let tor = j.contains("\"tor\": true");
+        Some((tor, tor && std::path::Path::new("/run/shadow-furtif/tor").exists()))
+    });
+    Etat { mode, cible, furtif }
 }
 
 /// Aligne `$CIBLE`, `$TARGET` et `$MISSION` sur la mission en cours.
@@ -161,6 +171,7 @@ pub fn sous_commandes(cmd: &str, avant: &[String]) -> &'static [(&'static str, &
             ("maj", "met tout Shadow à jour : système, apps, arsenal, shsh"),
             ("docteur", "vérifie que Shadow est entier et le répare"),
             ("rapport", "rapport de la mission en cours (Markdown)"),
+            ("furtif", "mode furtif : trafic par Tor, identité réseau masquée"),
         ],
         ("shadow", Some("modes")) if avant.len() == 1 => MODES,
         ("shadow-modes", None) => MODES,
@@ -185,6 +196,11 @@ pub fn sous_commandes(cmd: &str, avant: &[String]) -> &'static [(&'static str, &
             ("photo", "retient les extensions actives comme référence"),
             ("minuteur", "passage automatique toutes les 15 min"),
             ("json", "diagnostic en JSON"),
+        ],
+        ("shadow", Some("furtif")) if avant.len() == 1 => &[
+            ("on", "trafic par Tor + identité masquée (--sans-tor : identité seulement)"),
+            ("off", "réseau normal"),
+            ("etat", "ce qui est actif, IP vue de l'extérieur"),
         ],
         ("shadow", Some("maj")) if avant.len() == 1 => &[
             ("verifier", "ce qui attend, sans rien changer"),

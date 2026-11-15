@@ -173,6 +173,19 @@ def run():
     check("SHSH_JOURNAL=0 coupe le journal", "coupe-journal" not in open(tsv).read())
     send("SHSH_JOURNAL=1\r", 0.6)
 
+    # --- Mode furtif dans le prompt ---
+    with open(os.path.join(SHADOW, "furtif"), "w") as f:
+        json.dump({"actif": True, "tor": False}, f, indent=1)
+    mark(); send("\r", 0.8)
+    check("furtif sans Tor : « masqué » dans le prompt", "masqué" in text())
+    with open(os.path.join(SHADOW, "furtif"), "w") as f:
+        json.dump({"actif": True, "tor": True}, f, indent=1)
+    mark(); send("\r", 0.8)
+    check("furtif : Tor arrêté signalé en clair", "tor arrêté : en clair" in text())
+    os.unlink(os.path.join(SHADOW, "furtif"))
+    mark(); send("\r", 0.8)
+    check("furtif inactif : rien dans le prompt", "masqué" not in text() and "tor" not in text())
+
     # --- Ctrl+R par contexte (vues tirées du journal) ---
     os.makedirs("/tmp/shsh-ctx-a", exist_ok=True)
     send("cd /tmp/shsh-ctx-a\r", 0.6); send("echo ctxzz-ici\r", 0.6)

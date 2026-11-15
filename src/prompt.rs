@@ -38,6 +38,8 @@ pub struct PromptInfo {
     pub mode: Option<String>,
     /// Mission en cours : (adresse, nom).
     pub cible: Option<(String, String)>,
+    /// Mode furtif : (Tor demandé, Tor actif)
+    pub furtif: Option<(bool, bool)>,
     /// Ctrl+C au prompt : le code (130) est montré sans alarme
     pub discret: bool,
 }
@@ -288,6 +290,13 @@ impl ShshPrompt {
             if !nom.is_empty() {
                 left.push_str(&format!(" {m}{nom}{RESET}"));
             }
+        }
+        // Mode furtif : on doit toujours savoir si le trafic sort par Tor ou en clair
+        match info.furtif {
+            Some((_, true)) => left.push_str(&format!(" {}{BOLD}\u{f21b} tor{RESET}", fg(VIOLET_CLAIR))),
+            Some((true, false)) => left.push_str(&format!(" {}{BOLD}\u{f21b} tor arrêté : en clair{RESET}", fg(BRAISE))),
+            Some((false, _)) => left.push_str(&format!(" {}\u{f21b} masqué{RESET}", fg(VIOLET_CLAIR))),
+            None => {}
         }
         if info.jobs > 0 {
             left.push_str(&format!(" {}\u{f013} {}{RESET}", fg(CYAN), info.jobs));
