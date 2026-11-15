@@ -189,6 +189,13 @@ def run():
     jm = open(os.path.join(mission, "journal.md")).read()
     check("preuve : le journal de mission y renvoie", " · preuve : [preuves/" in jm and "-printf" in jm)
     check("preuve : pas de fichier brut laissé", not glob.glob(os.path.join(mission, "preuves", ".*.brut")))
+    send("cd / && preuve echo un-x; preuve echo deux-x\r", 4.0)
+    jm = open(os.path.join(mission, "journal.md")).read()
+    derniere = [l for l in jm.splitlines() if "deux-x" in l][-1:]
+    check("preuve : deux preuves liées depuis une ligne composée", bool(derniere) and derniere[0].count(" · preuve : [preuves/") == 2)
+    avant = len(glob.glob(os.path.join(mission, "preuves", "*.txt")))
+    send("preuve echo meme; preuve echo meme\r", 4.0)
+    check("preuve : deux preuves identiques gardées toutes les deux", len(glob.glob(os.path.join(mission, "preuves", "*.txt"))) == avant + 2)
 
     # --- Assistant « ? » (faux serveur local à la place de Groq) ---
     import http.server, threading

@@ -125,11 +125,13 @@ pub fn noter(sh: &Shell, ligne: &str, code: i32, d: Duration, cwd: &str, mission
     }
     let marque = if code == 0 { "✔".to_string() } else { format!("✘ {code}") };
     // « preuve … » : lien vers la sortie gardée dans $MISSION/preuves/
-    let preuve = sh
+    // (où que « preuve » soit dans la ligne : « cd x && preuve … », « preuve a; preuve b »)
+    let preuve: String = sh
         .get_var(crate::preuve::VAR_DERNIERE)
-        .filter(|_| ligne.trim_start().starts_with("preuve "))
+        .unwrap_or_default()
+        .split_whitespace()
         .map(|p| format!(" · preuve : [{p}]({p})"))
-        .unwrap_or_default();
+        .collect();
     let _ = writeln!(
         f,
         "- {} · {marque} · {} · {} — {}{preuve}",

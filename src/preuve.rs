@@ -27,12 +27,18 @@ Seules les variables exportées ($CIBLE, $MISSION…) passent à la commande.";
 /// (« Script started … [COMMAND=…] », traduites selon la langue) : elles contiennent le chemin
 /// complet du shell, donc le nom de l'utilisateur. On les retire.
 pub fn sans_entete_script(brut: &str) -> String {
-    brut.split_inclusive('\n')
-        .filter(|l| {
-            let l = l.trim_start();
-            !(l.starts_with("Script ") && (l.contains("[COMMAND=") || l.contains("[COMMAND_EXIT_CODE=")))
-        })
-        .collect()
+    // la langue change le début de ces lignes, pas leurs marqueurs : on se fie à ceux-ci,
+    // et seulement en première et en dernière ligne (là où script les écrit)
+    let mut lignes: Vec<&str> = brut.split_inclusive('\n').collect();
+    if lignes.first().is_some_and(|l| l.contains("[COMMAND=")) {
+        lignes.remove(0);
+    }
+    if let Some(i) = lignes.iter().rposition(|l| !l.trim().is_empty()) {
+        if lignes[i].contains("[COMMAND_EXIT_CODE=") {
+            lignes.remove(i);
+        }
+    }
+    lignes.concat()
 }
 
 /// Retire les séquences d'échappement du terminal et rejoue les retours chariot / effacements.
@@ -41,18 +47,27 @@ pub fn nettoyer(brut: &str) -> String {
         r"\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[PX^_][^\x1b]*\x1b\\|\x1b[()][0-9A-Za-z]|\x1b[=>78DEHMNOcZ]",
     )
     .expect("regex");
-    let sans = re.replace_all(brut, "");
+    // effacements de ligne (barres de progression : « \r ESC[2K … ») : rejoués plus bas
+    let brut = brut.replace("\x1b[2K", "\u{2}").replace("\x1b[0K", "\u{1}").replace("\x1b[K", "\u{1}");
+    let sans = re.replace_all(&brut, "");
     let mut sortie = String::with_capacity(sans.len());
     for ligne in sans.split('\n') {
         // un retour chariot réécrit la ligne (barres de progression) : on garde la dernière version
         let mut courante: Vec<char> = Vec::new();
         for segment in ligne.split('\r') {
-            let seg: Vec<char> = segment.chars().collect();
-            for (i, c) in seg.iter().enumerate() {
-                if i < courante.len() {
-                    courante[i] = *c;
-                } else {
-                    courante.push(*c);
+            let mut pos = 0;
+            for c in segment.chars() {
+                match c {
+                    '\u{1}' => courante.truncate(pos),          // efface jusqu'à la fin de la ligne
+                    '\u{2}' => courante = vec![' '; pos],         // efface toute la ligne
+                    c => {
+                        if pos < courante.len() {
+                            courante[pos] = c;
+                        } else {
+                            courante.push(c);
+                        }
+                        pos += 1;
+                    }
                 }
             }
         }
@@ -111,7 +126,14 @@ pub fn b_preuve(sh: &mut Shell, a: &[String]) -> ExecResult {
         return Ok(1);
     }
     let quand = crate::journal::maintenant();
-    let nom = format!("{}-{}.txt", crate::journal::date(quand, "%Y%m%d-%H%M%S"), slug(&ligne));
+    // même commande dans la même seconde : -2, -3… plutôt qu'écraser la preuve précédente
+    let base = format!("{}-{}", crate::journal::date(quand, "%Y%m%d-%H%M%S"), slug(&ligne));
+    let mut nom = format!("{base}.txt");
+    let mut n = 2;
+    while dossier.join(&nom).exists() {
+        nom = format!("{base}-{n}.txt");
+        n += 1;
+    }
     let fichier = dossier.join(&nom);
     let brut = dossier.join(format!(".{nom}.brut"));
     let shsh = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "shsh".into());
@@ -146,7 +168,12 @@ pub fn b_preuve(sh: &mut Shell, a: &[String]) -> ExecResult {
         sh.error(format!("preuve : {}: {e}", fichier.display()));
         return Ok(code);
     }
-    let _ = sh.set_var(VAR_DERNIERE, format!("preuves/{nom}"));
+    // plusieurs preuves sur une même ligne (« preuve a; preuve b ») : toutes gardées
+    let liste = match sh.get_var(VAR_DERNIERE).filter(|v| !v.is_empty()) {
+        Some(v) => format!("{v} preuves/{nom}"),
+        None => format!("preuves/{nom}"),
+    };
+    let _ = sh.set_var(VAR_DERNIERE, liste);
     eprintln!(
         "  \x1b[38;2;124;108;255m◐\x1b[0m \x1b[38;2;156;152;191mpreuve gardée : {}\x1b[0m",
         crate::builtins::tilde_path(sh, &fichier.to_string_lossy())
@@ -164,6 +191,8 @@ mod tests {
         assert_eq!(nettoyer("10%\r50%\r100%\n"), "100%\n");
         assert_eq!(nettoyer("abc\u{8}\u{8}X\n\n\n"), "aX\n");
         assert_eq!(nettoyer("\x1b]0;titre\x07ligne\n"), "ligne\n");
+        assert_eq!(nettoyer("abcdef\r\x1b[2Kxy\n"), "xy\n");
+        assert_eq!(nettoyer("abcdef\rxy\x1b[K\n"), "xy\n");
     }
 
     #[test]
@@ -171,6 +200,11 @@ mod tests {
         let b = "Script démarré sur 2026 [COMMAND=\"/home/alice/shsh -ic x\" TERM=\"x\"]\nsortie\n\nScript terminé sur 2026 [COMMAND_EXIT_CODE=\"0\"]\n";
         assert_eq!(nettoyer(&sans_entete_script(b)), "sortie\n");
         assert_eq!(sans_entete_script("Script kiddie\n"), "Script kiddie\n");
+        // locale où « Script » est traduit
+        let de = "Skript gestartet [COMMAND=\"/home/alice/x\"]\nok\nSkript beendet [COMMAND_EXIT_CODE=\"0\"]\n";
+        assert_eq!(nettoyer(&sans_entete_script(de)), "ok\n");
+        // un marqueur au milieu de la sortie n'est pas retiré
+        assert_eq!(sans_entete_script("a\n[COMMAND=x]\nb\n"), "a\n[COMMAND=x]\nb\n");
     }
 
     #[test]
