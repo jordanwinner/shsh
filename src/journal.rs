@@ -5,6 +5,9 @@
 //! - `$MISSION/journal.md` : pendant une mission Shadow OS (`shadow cible …`),
 //!   les mêmes lignes en Markdown, prêtes pour un rapport de test d'intrusion.
 //!
+//! Une commande est notée quand elle se termine : celle qui ne rend jamais la
+//! main (`exec …`, terminal fermé en plein scan) n'apparaît pas.
+//!
 //! Ce qui est exclu de l'historique (espace en tête, `SHSH_HISTORY_IGNORE`)
 //! n'est jamais écrit. `SHSH_JOURNAL=0` coupe tout.
 
@@ -47,10 +50,12 @@ fn maintenant() -> i64 {
 /// Durée lisible à la française : « 0,4 s », « 2 min 05 s », « 1 h 12 min ».
 pub fn duree(ms: u64) -> String {
     let s = ms as f64 / 1000.0;
-    if s < 60.0 {
+    // 59,96 s s'arrondirait en « 60,0 s » : on passe aux minutes avant
+    if ms < 59_950 {
         format!("{s:.1} s").replace('.', ",")
     } else if s < 3600.0 {
-        format!("{} min {:02} s", ms / 60_000, (ms / 1000) % 60)
+        let sec = (ms + 500) / 1000;
+        format!("{} min {:02} s", sec / 60, sec % 60)
     } else {
         format!("{} h {:02} min", ms / 3_600_000, (ms / 60_000) % 60)
     }
@@ -300,6 +305,7 @@ mod tests {
     #[test]
     fn durees() {
         assert_eq!(duree(400), "0,4 s");
+        assert_eq!(duree(59_960), "1 min 00 s");
         assert_eq!(duree(125_000), "2 min 05 s");
         assert_eq!(duree(4_320_000), "1 h 12 min");
     }

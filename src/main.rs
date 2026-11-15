@@ -403,12 +403,12 @@ fn real_main() {
                 last_duration = Some(t0.elapsed());
                 let rc = result_code(&sh, r);
                 // Journal : mêmes exclusions que l'historique (espace en tête, SHSH_HISTORY_IGNORE)
+                // Verrou inaccessible : dans le doute, on n'écrit rien
                 let ignoree = line.starts_with(' ')
-                    || data
-                        .lock()
-                        .ok()
-                        .and_then(|d| d.history_ignore.as_ref().map(|(_, re)| re.is_match(&line)))
-                        .unwrap_or(false);
+                    || match data.lock() {
+                        Ok(d) => d.history_ignore.as_ref().is_some_and(|(_, re)| re.is_match(&line)),
+                        Err(_) => true,
+                    };
                 // `exit` (rc = Err) ne fait que fermer le shell : rien à noter
                 if !ignoree && rc.is_ok() {
                     let code = *rc.as_ref().unwrap_or(&0);
