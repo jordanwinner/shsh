@@ -30,7 +30,7 @@ fn actif(sh: &Shell) -> bool {
 }
 
 /// Heure locale formatée avec strftime.
-fn date(quand: i64, modele: &str) -> String {
+pub fn date(quand: i64, modele: &str) -> String {
     let t = quand as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&t, &mut tm) };
@@ -40,7 +40,7 @@ fn date(quand: i64, modele: &str) -> String {
     String::from_utf8_lossy(&tampon[..n]).into_owned()
 }
 
-fn maintenant() -> i64 {
+pub fn maintenant() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -124,9 +124,15 @@ pub fn noter(sh: &Shell, ligne: &str, code: i32, d: Duration, cwd: &str, mission
         );
     }
     let marque = if code == 0 { "✔".to_string() } else { format!("✘ {code}") };
+    // « preuve … » : lien vers la sortie gardée dans $MISSION/preuves/
+    let preuve = sh
+        .get_var(crate::preuve::VAR_DERNIERE)
+        .filter(|_| ligne.trim_start().starts_with("preuve "))
+        .map(|p| format!(" · preuve : [{p}]({p})"))
+        .unwrap_or_default();
     let _ = writeln!(
         f,
-        "- {} · {marque} · {} · {} — {}",
+        "- {} · {marque} · {} · {} — {}{preuve}",
         date(quand, "%Y-%m-%d %H:%M:%S"),
         duree(ms),
         code_md(&crate::builtins::tilde_path(sh, cwd)),

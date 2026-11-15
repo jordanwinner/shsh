@@ -55,6 +55,14 @@ Shadow OS, les mêmes lignes vont aussi dans `$MISSION/journal.md`, que
 (espace en tête, `SHSH_HISTORY_IGNORE`) ne sont jamais écrites ; `SHSH_JOURNAL=0`
 coupe tout.
 
+**Preuves de mission** — `preuve nmap -sV $CIBLE` exécute la commande
+normalement (couleurs, interactivité, via `script`) et garde sa sortie nettoyée
+dans `$MISSION/preuves/AAAAMMJJ-HHMMSS-nom.txt`, avec date, cible, code de retour
+et durée. Pour un tube, la ligne entière entre guillemets :
+`preuve 'curl -s http://$CIBLE/ | grep -i version'`. Le journal de mission y
+renvoie et `shadow rapport` insère un extrait sous la commande. Seules les
+variables exportées passent à la commande.
+
 **Assistant `?`** — `? lister les ports ouverts de la cible` : la commande
 proposée arrive dans la ligne de saisie, jamais exécutée d'office (Entrée la
 lance, Ctrl+C l'abandonne), avec une phrase d'explication. Les commandes

@@ -12,6 +12,7 @@ mod jobs;
 mod journal;
 mod menu;
 mod parser;
+mod preuve;
 mod prompt;
 mod shadow;
 mod shell;
@@ -455,6 +456,7 @@ fn real_main() {
                         .map(|c| (c.dossier.as_str(), c.adresse.as_str(), c.nom.as_str()));
                     journal::noter(&sh, &line, code, last_duration.unwrap_or_default(), &cwd_avant, mission);
                 }
+                sh.vars.remove(preuve::VAR_DERNIERE);
                 match rc {
                     Ok(s) => sh.last_status = s,
                     Err(n) => break n,

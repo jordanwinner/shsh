@@ -173,6 +173,23 @@ def run():
     check("SHSH_JOURNAL=0 coupe le journal", "coupe-journal" not in open(tsv).read())
     send("SHSH_JOURNAL=1\r", 0.6)
 
+    # --- Preuves de mission ---
+    import glob
+    mark(); send("preuve printf '\\033[32mvert\\033[0m-preuve\\n'\r", 3.0)
+    check("preuve : la sortie s'affiche", "vert-preuve" in text() and "preuve gardée" in text())
+    fichiers = sorted(glob.glob(os.path.join(mission, "preuves", "*.txt")))
+    contenu = open(fichiers[-1]).read() if fichiers else ""
+    check("preuve : fichier propre (sans échappements)", "vert-preuve" in contenu and "\x1b" not in contenu
+          and "Cible : 10.9.8.7" in contenu and "Code de retour : 0" in contenu)
+    check("preuve : ni ligne de script ni chemin du shell", "COMMAND=" not in contenu and "/target/" not in contenu)
+    mark(); send("preuve 'echo abc | tr a z'\r", 3.0)
+    check("preuve : ligne complète avec tube", "zbc" in text())
+    mark(); send("preuve sh -c 'exit 4'; echo code=$?\r", 3.0)
+    check("preuve : code de retour transmis", "code=4" in text())
+    jm = open(os.path.join(mission, "journal.md")).read()
+    check("preuve : le journal de mission y renvoie", " · preuve : [preuves/" in jm and "-printf" in jm)
+    check("preuve : pas de fichier brut laissé", not glob.glob(os.path.join(mission, "preuves", ".*.brut")))
+
     # --- Assistant « ? » (faux serveur local à la place de Groq) ---
     import http.server, threading
     recu = {}
