@@ -66,6 +66,8 @@ pub struct Options {
     pub dotglob: bool,
     pub nocaseglob: bool,
     pub nocasematch: bool,
+    /// Édition de la ligne façon vi (`set -o vi`) plutôt qu'emacs
+    pub vi: bool,
 }
 
 /// Contrôle de flux non local (break, continue, return, exit, Ctrl+C).

@@ -1122,7 +1122,9 @@ fn b_set(sh: &mut Shell, a: &[String]) -> ExecResult {
                                 ("noglob", o.noglob),
                                 ("nounset", o.nounset),
                                 ("pipefail", o.pipefail),
+                                ("emacs", !o.vi),
                                 ("verbose", o.verbose),
+                                ("vi", o.vi),
                                 ("xtrace", o.xtrace),
                             ];
                             let s: String = rows
@@ -1140,7 +1142,18 @@ fn b_set(sh: &mut Shell, a: &[String]) -> ExecResult {
                             "noclobber" => sh.opts.noclobber = on,
                             "verbose" => sh.opts.verbose = on,
                             "allexport" => sh.opts.allexport = on,
-                            "emacs" | "vi" | "monitor" | "posix" | "interactive-comments" | "histexpand" | "notify" | "ignoreeof" => {}
+                            // l'éditeur est reconstruit avant le prochain prompt
+                            "vi" => {
+                                sh.opts.vi = on;
+                                sh.abbrs_changed = true;
+                            }
+                            "emacs" => {
+                                if on {
+                                    sh.opts.vi = false;
+                                }
+                                sh.abbrs_changed = true;
+                            }
+                            "monitor" | "posix" | "interactive-comments" | "histexpand" | "notify" | "ignoreeof" => {}
                             other => {
                                 sh.error(format!("set : option inconnue « {other} »"));
                                 return Ok(2);

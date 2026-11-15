@@ -1002,6 +1002,26 @@ fn import_history(dest: &Path, home: &str) {
     let _ = std::fs::write(dest, body);
 }
 
+/// Emacs, ou vi (`set -o vi`) : en vi, les raccourcis propres à shsh (Tab, Ctrl+R par
+/// contexte, Alt+S, Alt+E, Ctrl+F…) restent disponibles en mode insertion.
+fn mode_edition(sh: &Shell, kb: reedline::Keybindings) -> Box<dyn reedline::EditMode> {
+    if !sh.opts.vi {
+        return Box::new(Emacs::new(kb));
+    }
+    let defaut = default_emacs_keybindings();
+    let mut insertion = reedline::default_vi_insert_keybindings();
+    for (k, ev) in kb.get_keybindings() {
+        if defaut.get_keybindings().get(k) != Some(ev) {
+            insertion.add_binding(k.modifier, k.key_code, ev.clone());
+        }
+    }
+    Box::new(reedline::Vi::new(
+        insertion,
+        reedline::default_vi_normal_keybindings(),
+        reedline::default_vi_visual_keybindings(),
+    ))
+}
+
 pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
     let hp = history_path();
     import_history(&hp, &sh.home());
@@ -1095,7 +1115,7 @@ pub fn build_editor(sh: &mut Shell, data: &Shared) -> Reedline {
         .with_menu(ReedlineMenu::EngineCompleter(Box::new(crate::menu::MenuFr::new(menu, 14))))
         .with_menu(ReedlineMenu::HistoryMenu(Box::new(crate::menu::MenuFr::historique(historique, 12, data.clone()))))
         .with_validator(Box::new(ShshValidator))
-        .with_edit_mode(Box::new(Emacs::new(kb)))
+        .with_edit_mode(mode_edition(sh, kb))
         .with_transient_prompt(Box::new(TransientPrompt { ok: true }))
         .with_ansi_colors(true);
     let editeur = sh

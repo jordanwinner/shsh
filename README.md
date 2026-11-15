@@ -32,7 +32,7 @@ et branches git, hôtes ssh, cibles make, paquets apt, unités systemd, processu
 pour `kill`/`pkill`, sous-commandes de docker, cargo, npm, pip, tmux, snap et
 flatpak, scripts `npm run`, options `--…` lues dans les pages de manuel), historique en liste filtrée (Ctrl+R ; Ctrl+R à nouveau change de vue : tout → ce dossier → mission → échecs, d'après le journal), abréviations (`abbr gs='git status'`), auto-cd,
 « vouliez-vous dire … ? » (ou le paquet apt qui fournit la commande absente), contrôle des tâches complet (Ctrl+Z, `fg`, `bg`,
-`jobs`, `kill %n`), saisie multiligne, `!!` / `!$`, Alt+E pour retravailler la ligne dans `$EDITOR`, Alt+S pour ajouter `sudo`.
+`jobs`, `kill %n`), saisie multiligne, `!!` / `!$`, Alt+E pour retravailler la ligne dans `$EDITOR`, `set -o vi` pour l'édition façon vi (`❮` en mode normal ; Tab, Ctrl+R et les raccourcis de shsh restent en insertion ; `set -o emacs` pour revenir), Alt+S pour ajouter `sudo`.
 
 **Prompt Éclipse** — dossier (relatif au dépôt git), branche, état et avance/retard sur le distant, environnement Python, tâches
 en arrière-plan, code de retour toujours affiché (`✔ 0`, `✘ 137 KILL`), durée des commandes longues, heure ; les

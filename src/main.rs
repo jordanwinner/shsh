@@ -467,6 +467,11 @@ fn real_main() {
             }
             RlSignal::CtrlC(abandonne) => {
                 replier_prompt(&abandonne);
+                // en vi, la ligne suivante doit repartir en mode insertion (comme bash et zsh) ;
+                // reedline garde le mode normal : on reconstruit l'éditeur
+                if sh.opts.vi {
+                    sh.abbrs_changed = true;
+                }
                 sh.last_status = 130;
                 quiet_status = true;
                 last_duration = None;

@@ -173,6 +173,27 @@ def run():
     check("SHSH_JOURNAL=0 coupe le journal", "coupe-journal" not in open(tsv).read())
     send("SHSH_JOURNAL=1\r", 0.6)
 
+    # --- Mode vi (set -o vi) ---
+    mark(); send("set -o vi\r", 0.8); send("set -o | grep -E '^(vi|emacs)'\r", 0.8)
+    t = text()
+    check("set -o vi : option active", "vi          activé" in t and "emacs       désactivé" in t)
+    mark(); send("echo vimodeX", 0.4); send(b"\x1b", 0.5); send("x", 0.4)
+    check("vi : Échap passe en mode normal (❮)", "❮" in text())
+    mark(); send("\r", 0.8)
+    check("vi : « x » efface le caractère", "\nvimode" in text() and "vimodeX" not in text().split("\n")[-3:][0])
+    mark(); send("ech", 0.3); send("\t", 0.8)
+    check("vi : la complétion Tab reste là", "echo" in text())
+    send(b"\x03", 0.5)
+    # plusieurs résultats (un seul serait complété directement, sans menu)
+    mark(); send("echo ", 0.3); send(b"\x12", 1.0)
+    check("vi : Ctrl+R (historique par contexte) reste là", "≡ tout" in text())
+    send(b"\x1b", 0.4); send(b"\x03", 0.6)
+    mark(); send("echo apres-ctrlc-vi\r", 0.8)
+    check("vi : après Ctrl+C en mode normal, la ligne repart en insertion", "\napres-ctrlc-vi" in text())
+    mark(); send("set -o emacs\r", 0.8); send("echo emacsZ", 0.3); send(b"\x01", 0.3); send("#", 0.3); send("\r", 0.8)
+    # sans les sauvegardes du curseur (ESC 7 / ESC 8) que le terminal glisse dans la ligne
+    check("set -o emacs : Ctrl+A revient au début", "#echo emacsZ" in text().replace("\x1b7", "").replace("\x1b8", ""))
+
     # --- Mode furtif dans le prompt ---
     with open(os.path.join(SHADOW, "furtif"), "w") as f:
         json.dump({"actif": True, "tor": False}, f, indent=1)
