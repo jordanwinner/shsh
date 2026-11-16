@@ -1,85 +1,56 @@
-# shsh — le shadow shell
+<div align="center">
 
-Shell interactif écrit en Rust pour Shadow OS : compatible POSIX (et une bonne
-partie de bash), messages en français, prompt aux couleurs Éclipse.
+# shsh — the shadow shell
+
+**A bash-compatible shell written in Rust, designed in French, that knows your desktop and your mission.**
+
+[Français](README.fr.md) · [License: GPL-3.0](LICENSE) · [Shadow OS](https://github.com/jordanwinner/shadow-os)
+
+![shsh during a mission: target in the prompt, exit codes, command journal](docs/images/shsh.png)
+
+</div>
+
+shsh is the interactive shell of [Shadow OS](https://github.com/jordanwinner/shadow-os). It runs POSIX scripts and a large part of bash, speaks French (messages, help, « did you mean… ? »), and draws an Éclipse-coloured prompt. It also works without Shadow OS: the desktop integration simply switches itself off.
+
+**At a glance**: live suggestions and syntax highlighting · described completions (apt, systemd, git, docker, cargo, options read from man pages) · exit code and duration always in the prompt · a command `journal` (folder, exit code, duration) · context-aware Ctrl+R (everything, this folder, the mission, failures) · `preuve COMMAND` keeps a command's output as evidence · `? question` assistant that suggests a command without running it · vi mode · 169 snippets compared against bash, 76 interactive tests.
+
+**Measured** (on the development machine): `shsh -c true` starts in 7.5 ms (bash 9.5 ms, zsh 9.2 ms) · 4 MB of memory, like bash · a 200,000-iteration loop is still 24% slower than bash.
 
 ## Installation
 
 ```sh
-outils/installer.sh            # compile, installe /usr/local/bin/shsh, l'ajoute à /etc/shells
-outils/installer.sh --defaut   # … et en fait le shell de connexion (chsh)
+outils/installer.sh            # build, install /usr/local/bin/shsh, add it to /etc/shells
+outils/installer.sh --defaut   # … and make it the login shell (chsh)
 ```
 
-Configuration : `~/.shshrc` (syntaxe POSIX). `outils/importer-zshrc.py` reprend
-les alias et fonctions d'un `~/.zshrc`.
+Configuration lives in `~/.shshrc` (POSIX syntax). `outils/importer-zshrc.py` imports aliases and functions from a `~/.zshrc`.
 
-## Ce qu'il sait faire
+## What it does
 
-**Langage** — pipes, redirections (`2>&1`, `&>`, `<<<`, here-docs), `&&` `||`,
-`if/while/until/for/case`, `for ((…))`, fonctions et `local`, `[[ … ]]` avec
-`=~` et `BASH_REMATCH`, `(( … ))`, tableaux (`a=(…)`, `${a[@]}`, `${!a[@]}`,
-creux), tableaux associatifs (`declare -A`), entiers (`declare -i`), `case`
-avec `;&` et `;;&`, `${x@Q}` `${x@U}`, `${!préfixe*}`, `{fd}>fichier`, `$LINENO`, toutes les
-expansions `${…}` (défaut, motifs, remplacement, casse, sous-chaînes,
-indirection), `$(…)`, `$(< fichier)`, `<(…)`, accolades `{a,b}` `{1..10}`,
-globbing avec `**` récursif, `time`, `set -euxo pipefail`, `shopt`
-(nullglob, dotglob, nocasematch…), `trap`, `getopts`, `mapfile`.
+**Language**: pipes, redirections (`2>&1`, `&>`, `<<<`, here-docs), `&&` `||`, `if/while/until/for/case`, `for ((…))`, functions and `local`, `[[ … ]]` with `=~` and `BASH_REMATCH`, `(( … ))`, indexed and associative arrays (`declare -A`), `declare -i`, `case` with `;&` and `;;&`, `${x@Q}` `${x@U}`, `${!prefix*}`, `{fd}>file`, `$LINENO`, every `${…}` expansion, `$(…)`, `$(< file)`, `<(…)`, braces `{a,b}` `{1..10}`, recursive `**` globbing, `time`, `set -euxo pipefail`, `shopt` (nullglob, dotglob, nocasematch…), `trap`, `getopts`, `mapfile`.
 
-**Interactif** — coloration syntaxique en direct (commande inconnue en rose,
-chemins existants soulignés), suggestions grisées tirées de l'historique,
-complétion Tab avec descriptions (fichiers, commandes, variables, sous-commandes
-et branches git, hôtes ssh, cibles make, paquets apt, unités systemd, processus
-pour `kill`/`pkill`, sous-commandes de docker, cargo, npm, pip, tmux, snap et
-flatpak, scripts `npm run`, options `--…` lues dans les pages de manuel), historique en liste filtrée (Ctrl+R ; Ctrl+R à nouveau change de vue : tout → ce dossier → mission → échecs, d'après le journal), abréviations (`abbr gs='git status'`), auto-cd,
-« vouliez-vous dire … ? » (ou le paquet apt qui fournit la commande absente), contrôle des tâches complet (Ctrl+Z, `fg`, `bg`,
-`jobs`, `kill %n`), saisie multiligne, `!!` / `!$`, Alt+E pour retravailler la ligne dans `$EDITOR`, `set -o vi` pour l'édition façon vi (`❮` en mode normal ; Tab, Ctrl+R et les raccourcis de shsh restent en insertion ; `set -o emacs` pour revenir), Alt+S pour ajouter `sudo`.
+**Interactive**: live highlighting (unknown commands in pink, existing paths underlined), history-based suggestions, Tab completion with descriptions, history list with context views (Ctrl+R, then Ctrl+R again: everything → this folder → mission → failures), abbreviations (`abbr gs='git status'`), auto-cd, « did you mean… ? » (or the apt package that provides a missing command), full job control (Ctrl+Z, `fg`, `bg`, `jobs`, `kill %n`), multi-line input, `!!` / `!$`, Alt+E to edit the line in `$EDITOR`, Alt+S to prepend `sudo`, `set -o vi` for vi editing (`❮` in normal mode).
 
-**Prompt Éclipse** — dossier (relatif au dépôt git), branche, état et avance/retard sur le distant, environnement Python, tâches
-en arrière-plan, code de retour toujours affiché (`✔ 0`, `✘ 137 KILL`), durée des commandes longues, heure ; les
-prompts passés se replient en `❯ commande`.
+**Éclipse prompt**: folder (relative to the git repository), branch, status and ahead/behind, Python environment, background jobs, exit code always shown (`✔ 0`, `✘ 137 KILL`), duration of long commands, clock; past prompts collapse to `❯ command`.
 
-**Shadow OS** — shsh lit directement l'état du bureau, sans rien ajouter à
-`~/.shshrc` : la cible de la mission en cours (`shadow cible 10.10.11.5 nom`)
-s'affiche dans le prompt et `$CIBLE`, `$TARGET`, `$MISSION` sont posées dans
-tous les terminaux ouverts, puis retirées à `shadow cible fin` ; le mode du
-bureau (Pentest, Focus, Jeu, Nuit) apparaît à droite. Une `$CIBLE` posée à la
-main n'est jamais écrasée. Tab complète `shadow …` avec ses sous-commandes et
-les modes installés. `SHSH_SHADOW=0` coupe le tout.
+**Shadow OS integration**: shsh reads the desktop state directly, with nothing to add to `~/.shshrc`: the current mission target appears in the prompt and `$CIBLE`, `$TARGET`, `$MISSION` are set in every open terminal; the desktop mode (Pentest, Focus, Game, Night) appears on the right; stealth mode shows `tor`, or `tor arrêté : en clair` in red if Tor stopped. `SHSH_SHADOW=0` turns it all off.
 
-**Journal** — chaque commande tapée est notée avec son heure, son dossier, son
-code de retour et sa durée (`~/.local/share/shsh/journal.tsv`). `journal` affiche
-les dernières ; `journal ici`, `journal echecs`, `journal lentes`,
-`journal cherche MOTIF`, `journal aujourdhui` filtrent. Pendant une mission
-Shadow OS, les mêmes lignes vont aussi dans `$MISSION/journal.md`, que
-`shadow rapport` transforme en rapport. Les lignes exclues de l'historique
-(espace en tête, `SHSH_HISTORY_IGNORE`) ne sont jamais écrites ; `SHSH_JOURNAL=0`
-coupe tout.
+**Journal**: every command you type is recorded with its time, folder, exit code and duration (`~/.local/share/shsh/journal.tsv`). `journal` shows the latest ones; `journal ici`, `journal echecs`, `journal lentes`, `journal cherche PATTERN` filter them. During a Shadow mission the same lines also go to `$MISSION/journal.md`, which `shadow rapport` turns into a report. Lines excluded from history (leading space, `SHSH_HISTORY_IGNORE`) are never written; `SHSH_JOURNAL=0` disables it.
 
-**Preuves de mission** — `preuve nmap -sV $CIBLE` exécute la commande
-normalement (couleurs, interactivité, via `script`) et garde sa sortie nettoyée
-dans `$MISSION/preuves/AAAAMMJJ-HHMMSS-nom.txt`, avec date, cible, code de retour
-et durée. Pour un tube, la ligne entière entre guillemets :
-`preuve 'curl -s http://$CIBLE/ | grep -i version'`. Le journal de mission y
-renvoie et `shadow rapport` insère un extrait sous la commande. Seules les
-variables exportées passent à la commande.
+**Mission evidence**: `preuve nmap -sV $CIBLE` runs the command normally (colours, interactivity, through `script`) and keeps its cleaned output in `$MISSION/preuves/`, with date, target, exit code and duration. The mission journal links to it and `shadow rapport` inserts an excerpt under the command.
 
-**Assistant `?`** — `? lister les ports ouverts de la cible` : la commande
-proposée arrive dans la ligne de saisie, jamais exécutée d'office (Entrée la
-lance, Ctrl+C l'abandonne), avec une phrase d'explication. Les commandes
-destructrices (`rm -rf ~/*`, `dd of=/dev/…`, `mkfs`…) sont signalées en rouge.
-`? pourquoi ça a planté` joint la dernière commande en échec. Modèle : celui de
-jordan-cli (Groq) ou `GROQ_API_KEY` / `SHSH_ASSISTANT_MODELE`. Seuls partent la
-question, le dossier relatif à `~`, la cible de la mission Shadow et la dernière
-commande ratée ; la clé passe par un fichier d'en-têtes privé, jamais par la
-ligne de commande. `SHSH_ASSISTANT_CONTEXTE=0` n'envoie que la question,
-`SHSH_ASSISTANT=0` coupe l'assistant.
+**`?` assistant**: `? list the open ports of the target` puts a suggested command on the input line, never runs it (Enter runs it, Ctrl+C drops it), with a one-line explanation. Destructive commands (`rm -rf ~/*`, `dd of=/dev/…`, `mkfs`…) are flagged in red, and answers containing control characters are refused. What leaves the machine is redacted: the home directory becomes `~` and the user name becomes « utilisateur ». Uses a Groq API key (`GROQ_API_KEY`); `SHSH_ASSISTANT=0` disables it.
 
-**Crochets** — `shsh_precmd`, `shsh_preexec "$ligne"`, `chpwd`.
-`SHSH_HISTORY_IGNORE` (regex) exclut les lignes sensibles de l'historique.
+**Hooks**: `shsh_precmd`, `shsh_preexec "$line"`, `chpwd`. `SHSH_HISTORY_IGNORE` (regex) keeps sensitive lines out of history.
 
 ## Tests
 
 ```sh
-tests/compat.sh          # compare la sortie de shsh à celle de bash sur ~160 extraits
-python3 tests/pty_test.py  # pilote un shsh interactif dans un pseudo-terminal
+tests/compat.sh            # compares shsh output with bash on 169 snippets
+python3 tests/pty_test.py  # drives an interactive shsh in a pseudo-terminal (76 checks)
+cargo test                 # unit tests
 ```
+
+## License
+
+shsh is free software, released under the [GNU General Public License v3.0](LICENSE).
